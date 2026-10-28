@@ -59,5 +59,9 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(root.textContent).toContain("Data Dragon hors ligne");
     expect(root.querySelectorAll(".player-list > li").length).toBe(10);
     expect(root.querySelectorAll(".player-list > li.me").length).toBe(1);
+    // le conteneur du lecteur ne doit pas partager de classe avec les lignes joueurs (régression de mise en page)
+    expect(root.querySelector(".clip-player")?.classList.contains("player-row")).toBe(false);
+    expect(root.querySelector(".clip-player > .player-nav")).not.toBeNull();
+    expect(root.querySelector(".clip-list .player-nav")).toBeNull();
   }, 15000);
 });

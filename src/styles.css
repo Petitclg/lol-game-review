@@ -454,15 +454,20 @@ button:disabled {
   background: rgba(255, 255, 255, 0.14);
 }
 
+.clips-panel {
+  container-type: inline-size;
+}
+
 .clip-browser {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
 }
 
-@media (max-width: 900px) {
+/* Liste à côté du lecteur seulement si la colonne centrale est assez large */
+@container (min-width: 720px) {
   .clip-browser {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 220px;
   }
 }
 
@@ -481,12 +486,18 @@ button:disabled {
   margin: 0;
 }
 
+.clip-player {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
 .player-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-top: 0.6rem;
 }
 
 .clip-title {
@@ -586,7 +597,7 @@ button:disabled {
   gap: 0.25rem;
 }
 
-.player {
+.player-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
@@ -600,12 +611,12 @@ button:disabled {
   border: 1px solid transparent;
 }
 
-.player.me {
+.player-row.me {
   border-color: var(--warn);
   background: #2b2414;
 }
 
-.player > :nth-child(1) {
+.player-row > :nth-child(1) {
   grid-area: icon;
 }
 .player-info {

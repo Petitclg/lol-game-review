@@ -85,7 +85,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   });
   const clipTitle = el("h3", { class: "clip-title" });
   const nav = el("div", { class: "player-nav" }, [prevBtn, clipTitle, nextBtn]);
-  const player = el("div", { class: "player" }, [video, videoMsg, nav]);
+  const player = el("div", { class: "clip-player" }, [video, videoMsg, nav]);
   const browser = el("div", { class: "clip-browser", attrs: { id: "clip-panel", role: "tabpanel" } }, [player, listEl]);
 
   const placeholder = el("p", { class: "placeholder muted" });

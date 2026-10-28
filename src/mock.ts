@@ -14,11 +14,11 @@ const MINUTE = 60_000;
 const CHAMPIONS: Record<number, string> = {
   103: "Ahri",
   222: "Jinx",
-  64: "Lee Sin",
+  64: "LeeSin",
   157: "Yasuo",
   412: "Thresh",
   81: "Ezreal",
-  62: "Wukong",
+  62: "MonkeyKing",
   238: "Zed",
   22: "Ashe",
   54: "Malphite",

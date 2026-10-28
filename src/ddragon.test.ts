@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   championIconUrl,
   findChampionByKey,
-  findChampionByName,
+  findChampion,
   getChampionSpells,
   getDdragon,
   itemIconUrl,
@@ -59,14 +59,26 @@ describe("parseChampionIndex", () => {
   it("indexe par clé numérique", () => {
     expect(findChampionByKey(index, 62)).toEqual({ id: "MonkeyKing", name: "Wukong", key: 62 });
   });
-  it("recherche par nom affiché ou identifiant, insensible à la casse/ponctuation", () => {
-    expect(findChampionByName(index, "Wukong")?.id).toBe("MonkeyKing");
-    expect(findChampionByName(index, "monkeyking")?.id).toBe("MonkeyKing");
-    expect(findChampionByName(index, "Kai'Sa")?.id).toBe("Kaisa");
+  it("recherche par identifiant d'abord (insensible à la casse), puis par nom affiché", () => {
+    expect(findChampion(index, "MonkeyKing")?.name).toBe("Wukong");
+    expect(findChampion(index, "monkeyking")?.id).toBe("MonkeyKing");
+    expect(findChampion(index, "Kaisa")?.id).toBe("Kaisa");
+    expect(findChampion(index, "Wukong")?.id).toBe("MonkeyKing");
+    expect(findChampion(index, "Kai'Sa")?.id).toBe("Kaisa");
+  });
+  it("l'identifiant l'emporte sur un nom identique d'un autre champion", () => {
+    const idx = parseChampionIndex({
+      data: {
+        Nunu: { id: "Nunu", key: "20", name: "Nunu & Willump" },
+        Other: { id: "Other", key: "21", name: "Nunu" },
+      },
+    });
+    expect(findChampion(idx, "Nunu")?.key).toBe(20);
   });
   it("ignore les entrées invalides", () => {
     expect(index.byKey.size).toBe(3);
-    expect(findChampionByName(index, "Broken")).toBeNull();
+    expect(findChampion(index, "Broken")).toBeNull();
+    expect(findChampion(null, "Ahri")).toBeNull();
   });
   it("entrée malformée → index vide", () => {
     expect(parseChampionIndex(null).byKey.size).toBe(0);

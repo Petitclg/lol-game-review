@@ -13,6 +13,7 @@ export interface ChampionRef {
 
 export interface ChampionIndex {
   byKey: Map<number, ChampionRef>;
+  byId: Map<string, ChampionRef>;
   byName: Map<string, ChampionRef>;
 }
 
@@ -70,7 +71,7 @@ export function normalizeName(name: string): string {
 }
 
 export function parseChampionIndex(json: unknown): ChampionIndex {
-  const index: ChampionIndex = { byKey: new Map(), byName: new Map() };
+  const index: ChampionIndex = { byKey: new Map(), byId: new Map(), byName: new Map() };
   if (!isRecord(json) || !isRecord(json["data"])) return index;
   for (const entry of Object.values(json["data"])) {
     if (!isRecord(entry)) continue;
@@ -80,14 +81,17 @@ export function parseChampionIndex(json: unknown): ChampionIndex {
     if (!Number.isInteger(numKey)) continue;
     const ref: ChampionRef = { id, name, key: numKey };
     index.byKey.set(numKey, ref);
+    index.byId.set(normalizeName(id), ref);
     index.byName.set(normalizeName(name), ref);
-    index.byName.set(normalizeName(id), ref);
   }
   return index;
 }
 
-export function findChampionByName(index: ChampionIndex | null, name: string): ChampionRef | null {
-  return index?.byName.get(normalizeName(name)) ?? null;
+/** Résout la valeur du backend (identifiant DDragon, ex. "MonkeyKing") : id d'abord, puis nom affiché. */
+export function findChampion(index: ChampionIndex | null, idOrName: string): ChampionRef | null {
+  if (!index) return null;
+  const norm = normalizeName(idOrName);
+  return index.byId.get(norm) ?? index.byName.get(norm) ?? null;
 }
 
 export function findChampionByKey(index: ChampionIndex | null, key: number): ChampionRef | null {

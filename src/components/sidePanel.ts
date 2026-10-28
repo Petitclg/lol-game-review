@@ -1,7 +1,7 @@
 import { baseCooldownForRank, effectiveCooldown, formatCooldown } from "../cooldown";
 import {
   championIconUrl,
-  findChampionByName,
+  findChampion,
   getChampionSpells,
   itemIconUrl,
   type Ddragon,
@@ -20,7 +20,7 @@ export interface SidePanel {
 }
 
 function playerRow(p: PlayerSnapshot, dd: Ddragon | null): HTMLElement {
-  const champ = findChampionByName(dd?.champions ?? null, p.champion);
+  const champ = findChampion(dd?.champions ?? null, p.champion);
   const items = p.items
     .filter((i) => i.id > 0)
     .map((item) => {
@@ -31,11 +31,11 @@ function playerRow(p: PlayerSnapshot, dd: Ddragon | null): HTMLElement {
       wrap.appendChild(remoteImage(dd ? itemIconUrl(dd.version, item.id) : null, "", "item-icon"));
       return wrap;
     });
-  return el("li", { class: `player${p.isMe ? " me" : ""}`, attrs: { "aria-current": p.isMe ? "true" : undefined } }, [
+  return el("li", { class: `player-row${p.isMe ? " me" : ""}`, attrs: { "aria-current": p.isMe ? "true" : undefined } }, [
     remoteImage(dd && champ ? championIconUrl(dd.version, champ.id) : null, "", "champ-icon small"),
     el("span", { class: "player-info" }, [
       el("span", { class: "player-name", text: p.name, attrs: { title: p.name } }),
-      el("span", { class: "player-champ", text: `${p.champion} · niv. ${p.level}` }),
+      el("span", { class: "player-champ", text: `${champ?.name ?? p.champion} · niv. ${p.level}` }),
     ]),
     el("span", { class: "player-kda", text: formatKda(p.kills, p.deaths, p.assists) }),
     el("span", { class: "player-spells", text: p.spells.join(" / ") }),
@@ -128,7 +128,7 @@ export function createSidePanel(): SidePanel {
     update(state, dd) {
       const clip = currentClip(state);
       const mine = clip?.players.find((p) => p.isMe);
-      const champ = dd && mine ? findChampionByName(dd.champions, mine.champion) : null;
+      const champ = dd && mine ? findChampion(dd.champions, mine.champion) : null;
       const wantKey = dd && champ ? `${dd.version}/${champ.id}` : null;
 
       if (wantKey !== spellsFor) {

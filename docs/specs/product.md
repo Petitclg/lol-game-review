@@ -31,15 +31,18 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 1. **Source vidéo.** Les parties passées ne sont pas filmées. Les clips viennent d'un enregistrement léger fait pendant la partie ; les parties jouées avant l'installation n'ont que le résumé (voir [ADR 0001](../adr/0001-recording-during-game.md)).
 2. **Ultimates (F4).** La Live Client Data API n'expose pas les lancements de sorts. Détecter les ultimates exige une autre source, à investiguer (spike). Le thème est reporté tant qu'aucune source fiable n'est validée.
 3. **Cooldowns adverses (F6).** Estimés (niveaux de sorts, ability haste, Data Dragon), donc approximatifs.
-4. **Anti-cheat Vanguard.** La compatibilité de la capture doit être vérifiée tôt (spike recorder).
+4. **Anti-cheat Vanguard.** Validé sur une partie réelle (v0.1) : la capture `ddagrab` + NVENC fonctionne en jeu, à environ 5 Mbit/s en 1440p30, priorité *BelowNormal*, charge CPU négligeable. À confirmer sur d'autres configurations (AMD, Intel, plein écran exclusif).
 5. **Clé API Riot.** Non requise au MVP. Match-V5 est un fournisseur optionnel ultérieur.
 
-## Découpage
+## Avancement (v0.1)
 
-1. `lgr-core` : logique métier (fait : événements, fenêtres de clips, cooldowns).
-2. Client LCU : compte actif, parties récentes.
-3. Moniteur de partie en cours et stockage SQLite.
-4. Recorder (spike puis implémentation).
-5. Extraction des clips.
-6. Interface Tauri.
-7. CI/CD, release, mise à jour automatique.
+| Lot | État |
+|---|---|
+| Logique métier (`lgr-core`) | fait |
+| Client LCU : compte actif, parties récentes | fait, testé sur le vrai client |
+| Moniteur de partie, stockage en fichiers JSON ([ADR 0002](../adr/0002-storage-and-ffmpeg.md)) | fait, testé sur une vraie partie |
+| Enregistrement silencieux (ffmpeg, encodeur matériel) | fait |
+| Extraction des clips, synchronisation vidéo / jeu | fait, précision < 1 s mesurée |
+| Interface Tauri, zone de notification | fait |
+| CI/CD, release signée, mise à jour automatique | fait (première release à publier) |
+| Ultimates (F4), cooldowns restants (F6), démarrage avec Windows | à faire |
