@@ -47,9 +47,7 @@ fn cuts_the_requested_range_without_reencoding() {
             "-i",
         ])
         .arg("testsrc=size=160x120:rate=30")
-        .args([
-            "-t", "8", "-c:v", "libx264", "-g", "30", "-pix_fmt", "yuv420p",
-        ])
+        .args(["-t", "8", "-c:v", "mpeg4", "-q:v", "5", "-g", "30"])
         .arg(&input)
         .status()
         .unwrap()

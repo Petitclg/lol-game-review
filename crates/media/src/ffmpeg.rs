@@ -13,9 +13,18 @@ pub enum Encoder {
     Qsv,
     /// CPU fallback; noticeably heavier, avoided whenever a GPU encoder works.
     X264,
+    /// CPU fallback available in LGPL ffmpeg builds, which do not ship x264.
+    OpenH264,
 }
 
-const GPU_ENCODERS: [Encoder; 3] = [Encoder::Nvenc, Encoder::Amf, Encoder::Qsv];
+/// Probed in this order; GPU encoders first.
+const PROBE_ORDER: [Encoder; 5] = [
+    Encoder::Nvenc,
+    Encoder::Amf,
+    Encoder::Qsv,
+    Encoder::X264,
+    Encoder::OpenH264,
+];
 
 impl Encoder {
     fn args(self) -> Vec<&'static str> {
@@ -79,6 +88,16 @@ impl Encoder {
                 "ultrafast",
                 "-crf",
                 "30",
+                "-g",
+                "30",
+            ],
+            Self::OpenH264 => vec![
+                "-vf",
+                "hwdownload,format=bgra,scale=-2:720,format=yuv420p",
+                "-c:v",
+                "libopenh264",
+                "-b:v",
+                "3M",
                 "-g",
                 "30",
             ],
@@ -235,10 +254,11 @@ pub fn run_with_timeout(mut cmd: Command, timeout: Duration) -> io::Result<bool>
     }
 }
 
-/// Picks the first GPU encoder that really works on this machine, else the CPU one.
+/// Picks the first encoder that really works on this machine (GPU first, then CPU).
+/// Falls back to x264 when nothing works, so the failure is reported at record time.
 #[must_use]
 pub fn detect_encoder(ffmpeg: &Path) -> Encoder {
-    for enc in GPU_ENCODERS {
+    for enc in PROBE_ORDER {
         let mut cmd = silent_command(ffmpeg);
         cmd.args(probe_args(enc));
         if run_with_timeout(cmd, Duration::from_secs(15)).unwrap_or(false) {
@@ -267,10 +287,22 @@ mod tests {
     }
 
     #[test]
-    fn cpu_fallback_downscales() {
-        let a = strs(&record_args(Encoder::X264, Path::new("o.mkv")));
-        assert!(a.iter().any(|s| s.contains("scale=-2:720")));
-        assert!(a.contains(&"libx264".to_owned()));
+    fn cpu_fallbacks_downscale() {
+        for (enc, codec) in [
+            (Encoder::X264, "libx264"),
+            (Encoder::OpenH264, "libopenh264"),
+        ] {
+            let a = strs(&record_args(enc, Path::new("o.mkv")));
+            assert!(a.iter().any(|s| s.contains("scale=-2:720")));
+            assert!(a.contains(&codec.to_owned()));
+        }
+    }
+
+    #[test]
+    fn gpu_encoders_are_probed_before_cpu_ones() {
+        let pos = |e: Encoder| PROBE_ORDER.iter().position(|x| *x == e).unwrap();
+        assert!(pos(Encoder::Nvenc) < pos(Encoder::X264));
+        assert!(pos(Encoder::Qsv) < pos(Encoder::OpenH264));
     }
 
     #[test]
