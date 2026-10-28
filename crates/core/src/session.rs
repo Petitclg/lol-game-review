@@ -24,6 +24,9 @@ pub struct PlayerSnapshot {
     pub assists: u32,
     pub items: Vec<ItemInfo>,
     pub spells: Vec<String>,
+    /// Stable summoner spell ids (e.g. `SummonerFlash`); empty for older recordings.
+    #[serde(default)]
+    pub spell_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,6 +34,9 @@ pub struct PlayerSnapshot {
 pub struct Snapshot {
     pub game_time_secs: f64,
     pub players: Vec<PlayerSnapshot>,
+    /// Unspent gold of the local player (the API exposes no other player's gold).
+    #[serde(default)]
+    pub my_gold: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,6 +68,67 @@ pub struct Clip {
     pub end_secs: f64,
     pub file: Option<String>,
     pub players: Vec<PlayerSnapshot>,
+    /// Players taking part in the highlight; empty when unknown (older clips).
+    #[serde(default)]
+    pub involved: Vec<Involved>,
+    #[serde(default)]
+    pub my_gold: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    Killer,
+    Victim,
+    Assist,
+}
+
+/// A player involved in a highlight; `name` equals `PlayerSnapshot::name`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Involved {
+    pub name: String,
+    pub roles: Vec<Role>,
+}
+
+/// Maps a name from a Live Client event (game name, no tag) to a player of the snapshot.
+fn resolve<'a>(players: &'a [PlayerSnapshot], event_name: &str) -> Option<&'a PlayerSnapshot> {
+    players.iter().find(|p| p.name == event_name).or_else(|| {
+        players
+            .iter()
+            .find(|p| p.name.split('#').next() == Some(event_name))
+    })
+}
+
+/// Players taking part in the given highlights. Names that are not players
+/// (minions, turrets) are ignored; a player's roles are merged across highlights.
+#[must_use]
+pub fn involved_players(highlights: &[Highlight], players: &[PlayerSnapshot]) -> Vec<Involved> {
+    let mut out: Vec<Involved> = Vec::new();
+    let mut add = |event_name: &str, role: Role| {
+        let Some(p) = resolve(players, event_name) else {
+            return;
+        };
+        match out.iter_mut().find(|i| i.name == p.name) {
+            Some(i) if !i.roles.contains(&role) => i.roles.push(role),
+            Some(_) => {}
+            None => out.push(Involved {
+                name: p.name.clone(),
+                roles: vec![role],
+            }),
+        }
+    };
+    for h in highlights {
+        if let Some(k) = &h.killer {
+            add(k, Role::Killer);
+        }
+        if let Some(v) = &h.victim {
+            add(v, Role::Victim);
+        }
+        for a in &h.assisters {
+            add(a, Role::Assist);
+        }
+    }
+    out
 }
 
 /// Converts a game time to a position in the recorded video (never negative).
@@ -136,6 +203,7 @@ pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
             }
             let first = &w.highlights[0];
             let snap = snapshot_at(&session.snapshots, first.time_secs);
+            let players = snap.map(|s| s.players.clone()).unwrap_or_default();
             clips.push(Clip {
                 id: format!("{}-{i}", theme_key(theme)),
                 theme,
@@ -144,7 +212,9 @@ pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
                 start_secs: to_video_time(w.start_secs, session.video_anchor_secs),
                 end_secs: to_video_time(w.end_secs, session.video_anchor_secs),
                 file: None,
-                players: snap.map(|s| s.players.clone()).unwrap_or_default(),
+                involved: involved_players(&w.highlights, &players),
+                my_gold: snap.and_then(|s| s.my_gold),
+                players,
             });
         }
     }
@@ -168,21 +238,31 @@ mod tests {
         }
     }
 
+    fn player(name: &str, team: &str, is_me: bool, level: u32) -> PlayerSnapshot {
+        PlayerSnapshot {
+            name: name.into(),
+            champion: "Ahri".into(),
+            team: team.into(),
+            is_me,
+            level,
+            kills: 0,
+            deaths: 0,
+            assists: 0,
+            items: vec![],
+            spells: vec![],
+            spell_keys: vec![],
+        }
+    }
+
     fn snap(t: f64, level: u32) -> Snapshot {
         Snapshot {
             game_time_secs: t,
-            players: vec![PlayerSnapshot {
-                name: "Me#EUW".into(),
-                champion: "Ahri".into(),
-                team: "ORDER".into(),
-                is_me: true,
-                level,
-                kills: 0,
-                deaths: 0,
-                assists: 0,
-                items: vec![],
-                spells: vec![],
-            }],
+            players: vec![
+                player("Me#EUW", "ORDER", true, level),
+                player("Ally#EUW", "ORDER", false, level),
+                player("Foe#EUW", "CHAOS", false, level),
+            ],
+            my_gold: Some(500.0),
         }
     }
 
@@ -226,6 +306,62 @@ mod tests {
             "snapshots":[{"gameTimeSecs":1.0,"players":[],"abilityRanks":{"q":1,"w":1,"e":1,"r":0},"abilityHaste":10.0}]}"#;
         let s: Session = serde_json::from_str(json).unwrap();
         assert_eq!(s.snapshots.len(), 1);
+    }
+
+    #[test]
+    fn involved_players_resolve_tagless_event_names() {
+        let mut e = ev(1, "ChampionKill", 150.0, "Me", "Foe");
+        e.assisters = vec!["Ally".into()];
+        let s = session(vec![e], 0.0);
+        let c = &build_clips(&s, ClipConfig::default())[0];
+        assert_eq!(
+            c.involved,
+            [
+                Involved {
+                    name: "Me#EUW".into(),
+                    roles: vec![Role::Killer]
+                },
+                Involved {
+                    name: "Foe#EUW".into(),
+                    roles: vec![Role::Victim]
+                },
+                Involved {
+                    name: "Ally#EUW".into(),
+                    roles: vec![Role::Assist]
+                },
+            ]
+        );
+        assert_eq!(c.my_gold, Some(500.0));
+    }
+
+    #[test]
+    fn non_player_killers_are_ignored() {
+        let s = session(
+            vec![ev(1, "ChampionKill", 150.0, "Minion_T200L0S1", "Me")],
+            0.0,
+        );
+        let c = &build_clips(&s, ClipConfig::default())[0];
+        let names: Vec<_> = c.involved.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(names, ["Me#EUW"]);
+    }
+
+    #[test]
+    fn roles_are_merged_across_a_multikill() {
+        let mut second = ev(2, "ChampionKill", 155.0, "Me", "Foe");
+        second.assisters = vec!["Ally".into()];
+        let s = session(vec![ev(1, "ChampionKill", 150.0, "Me", "Foe"), second], 0.0);
+        let c = &build_clips(&s, ClipConfig::default())[0];
+        assert_eq!(c.involved.len(), 3);
+        let me = c.involved.iter().find(|i| i.name == "Me#EUW").unwrap();
+        assert_eq!(me.roles, [Role::Killer]);
+    }
+
+    #[test]
+    fn clips_saved_before_involvement_existed_still_load() {
+        let json = r#"{"id":"kill-0","theme":"kill","label":"Kill","gameTimeSecs":1.0,
+            "startSecs":0.0,"endSecs":1.0,"file":null,"players":[]}"#;
+        let c: Clip = serde_json::from_str(json).unwrap();
+        assert!(c.involved.is_empty() && c.my_gold.is_none());
     }
 
     #[test]

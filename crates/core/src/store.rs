@@ -61,6 +61,11 @@ impl SessionStore {
         Self { root: root.into() }
     }
 
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn session_dir(&self, id: &str) -> Result<PathBuf, StoreError> {
         validate_id(id)?;
         Ok(self.root.join(id))

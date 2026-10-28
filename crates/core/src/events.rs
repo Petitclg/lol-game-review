@@ -54,6 +54,13 @@ pub struct Highlight {
     pub time_secs: f64,
     pub theme: Theme,
     pub label: String,
+    /// Names as given by the Live Client API (game name, without tag).
+    #[serde(default)]
+    pub killer: Option<String>,
+    #[serde(default)]
+    pub victim: Option<String>,
+    #[serde(default)]
+    pub assisters: Vec<String>,
 }
 
 /// Returns the highlights of the player among `events`, sorted by time.
@@ -101,6 +108,9 @@ fn classify_one<S: AsRef<str>>(e: &RawLiveEvent, aliases: &[S]) -> Option<Highli
         time_secs: e.event_time,
         theme,
         label: label.to_owned(),
+        killer: e.killer_name.clone(),
+        victim: e.victim_name.clone(),
+        assisters: e.assisters.clone(),
     })
 }
 

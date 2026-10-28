@@ -33,6 +33,9 @@ pub struct ActivePlayer {
     pub riot_id_game_name: String,
     #[serde(default)]
     pub summoner_name: String,
+    /// Unspent gold; only exposed for the local player.
+    #[serde(default)]
+    pub current_gold: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -90,6 +93,22 @@ pub struct SummonerSpells {
 pub struct SpellName {
     #[serde(default)]
     pub display_name: String,
+    #[serde(default)]
+    pub raw_display_name: String,
+}
+
+const RAW_SPELL_PREFIX: &str = "GeneratedTip_SummonerSpell_";
+const RAW_SPELL_SUFFIX: &str = "_DisplayName";
+
+impl SpellName {
+    /// Stable id such as `SummonerFlash`, independent of the game language.
+    pub fn key(&self) -> Option<String> {
+        self.raw_display_name
+            .strip_prefix(RAW_SPELL_PREFIX)
+            .and_then(|s| s.strip_suffix(RAW_SPELL_SUFFIX))
+            .filter(|k| !k.is_empty())
+            .map(str::to_owned)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -193,6 +212,16 @@ mod tests {
             dragon_type: None,
         });
         assert!(d.has_game_ended());
+    }
+
+    #[test]
+    fn spell_key_is_language_independent() {
+        let s = SpellName {
+            display_name: "Saut éclair".into(),
+            raw_display_name: "GeneratedTip_SummonerSpell_SummonerFlash_DisplayName".into(),
+        };
+        assert_eq!(s.key().as_deref(), Some("SummonerFlash"));
+        assert_eq!(SpellName::default().key(), None);
     }
 
     #[test]

@@ -108,6 +108,10 @@ impl Encoder {
 const CAPTURE_INPUT: &str = "ddagrab=output_idx=0:framerate=30";
 const BASE_ARGS: [&str; 4] = ["-hide_banner", "-loglevel", "error", "-y"];
 
+/// Safety net: ffmpeg stops by itself after this long, so a recorder orphaned by a
+/// crash can never record indefinitely. No game lasts anywhere near four hours.
+const MAX_RECORDING_SECS: &str = "14400";
+
 /// Arguments recording the primary display, video only, one keyframe per second
 /// (so clips can be cut without re-encoding).
 #[must_use]
@@ -115,7 +119,7 @@ pub fn record_args(encoder: Encoder, output: &Path) -> Vec<OsString> {
     let mut a: Vec<OsString> = BASE_ARGS.iter().map(OsString::from).collect();
     a.extend(["-f", "lavfi", "-i", CAPTURE_INPUT].map(OsString::from));
     a.extend(encoder.args().into_iter().map(OsString::from));
-    a.push("-an".into());
+    a.extend(["-t", MAX_RECORDING_SECS, "-an"].map(OsString::from));
     a.push(output.into());
     a
 }
@@ -296,6 +300,17 @@ mod tests {
             assert!(a.iter().any(|s| s.contains("scale=-2:720")));
             assert!(a.contains(&codec.to_owned()));
         }
+    }
+
+    #[test]
+    fn recording_has_a_hard_duration_cap() {
+        let a = strs(&record_args(Encoder::Nvenc, Path::new("o.mkv")));
+        let t = a.iter().position(|s| s == "-t").unwrap();
+        assert_eq!(a[t + 1], "14400");
+        assert!(
+            t < a.len() - 1,
+            "the cap is an output option, before the file"
+        );
     }
 
     #[test]

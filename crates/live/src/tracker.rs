@@ -1,6 +1,6 @@
 //! Builds a [`Session`] incrementally from successive Live Client API samples.
 
-use crate::models::AllGameData;
+use crate::models::{AllGameData, SpellName};
 use lgr_core::session::{anchor_from_sample, ItemInfo, PlayerSnapshot, Session, Snapshot};
 
 /// Minimum game-time gap between two stored snapshots.
@@ -100,11 +100,19 @@ fn snapshot(data: &AllGameData) -> Snapshot {
             .filter(|n| !n.is_empty())
             .cloned()
             .collect(),
+            spell_keys: [
+                &p.summoner_spells.summoner_spell_one,
+                &p.summoner_spells.summoner_spell_two,
+            ]
+            .into_iter()
+            .filter_map(SpellName::key)
+            .collect(),
         })
         .collect();
     Snapshot {
         game_time_secs: data.game_data.game_time,
         players,
+        my_gold: me.current_gold,
     }
 }
 
@@ -119,10 +127,10 @@ mod tests {
             })
             .collect();
         let json = format!(
-            r#"{{"activePlayer":{{"riotId":"Me#EUW","riotIdGameName":"Me","summonerName":"Me#EUW"}},
+            r#"{{"activePlayer":{{"riotId":"Me#EUW","riotIdGameName":"Me","summonerName":"Me#EUW","currentGold":742.5}},
             "allPlayers":[{{"riotId":"Me#EUW","summonerName":"Me#EUW","championName":"Ahri","team":"ORDER","level":3,
               "scores":{{"kills":1,"deaths":0,"assists":0}},"items":[{{"itemID":1055,"displayName":"Doran's Blade"}}],
-              "summonerSpells":{{"summonerSpellOne":{{"displayName":"Flash"}},"summonerSpellTwo":{{"displayName":"Ignite"}}}}}},
+              "summonerSpells":{{"summonerSpellOne":{{"displayName":"Saut éclair","rawDisplayName":"GeneratedTip_SummonerSpell_SummonerFlash_DisplayName"}},"summonerSpellTwo":{{"displayName":"Ignite"}}}}}},
              {{"riotId":"Foe#EUW","summonerName":"Foe#EUW","championName":"Zed","team":"CHAOS","level":3}}],
             "events":{{"Events":[{}]}},"gameData":{{"gameTime":{game_time}}}}}"#,
             evs.join(",")
@@ -139,7 +147,9 @@ mod tests {
         let snap = &s.snapshots[0];
         assert!(snap.players[0].is_me && !snap.players[1].is_me);
         assert_eq!(snap.players[0].items[0].id, 1055);
-        assert_eq!(snap.players[0].spells, ["Flash", "Ignite"]);
+        assert_eq!(snap.players[0].spells, ["Saut éclair", "Ignite"]);
+        assert_eq!(snap.players[0].spell_keys, ["SummonerFlash"]);
+        assert_eq!(snap.my_gold, Some(742.5));
     }
 
     #[test]

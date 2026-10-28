@@ -1,12 +1,13 @@
-import { championIconUrl, findChampion, itemIconUrl, type Ddragon } from "../ddragon";
+import { championIconUrl, findChampion, itemIconUrl, type Ddragon, type ItemPrices } from "../ddragon";
 import { el, remoteImage, replaceChildren } from "../dom";
 import { formatDuration, formatKda } from "../format";
 import { currentClip, type State } from "../state/store";
 import type { Clip, PlayerSnapshot } from "../types";
+import { renderInsights } from "./insightsBlock";
 
 export interface SidePanel {
   el: HTMLElement;
-  update(state: State, dd: Ddragon | null): void;
+  update(state: State, dd: Ddragon | null, prices?: ItemPrices | null): void;
 }
 
 function playerRow(p: PlayerSnapshot, dd: Ddragon | null): HTMLElement {
@@ -42,14 +43,14 @@ function teamBlock(title: string, className: string, players: PlayerSnapshot[], 
 
 export function createSidePanel(): SidePanel {
   const root = el("aside", { class: "side-panel", attrs: { "aria-label": "Détails du clip" } });
-  let last: { clip: Clip | null; dd: Ddragon | null } | null = null;
+  let last: { clip: Clip | null; dd: Ddragon | null; prices: ItemPrices | null } | null = null;
 
   return {
     el: root,
-    update(state, dd) {
+    update(state, dd, prices = null) {
       const clip = currentClip(state);
-      if (last && last.clip === clip && last.dd === dd) return;
-      last = { clip, dd };
+      if (last && last.clip === clip && last.dd === dd && last.prices === prices) return;
+      last = { clip, dd, prices };
       if (!clip) {
         replaceChildren(root, [
           el("p", { class: "muted", text: "Sélectionnez un clip pour voir le détail de la partie à cet instant." }),
@@ -65,6 +66,7 @@ export function createSidePanel(): SidePanel {
       const myTeam = mine?.team ?? "ORDER";
       replaceChildren(root, [
         el("h3", { text: `${clip.label} — ${formatDuration(clip.gameTimeSecs)}` }),
+        renderInsights(clip, dd, prices),
         el("section", { class: "teams" }, [
           teamBlock(`Équipe alliée (${side(myTeam)})`, "ally", allies, dd),
           teamBlock(`Équipe ennemie (${side(myTeam === "ORDER" ? "CHAOS" : "ORDER")})`, "enemy", enemies, dd),

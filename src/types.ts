@@ -35,6 +35,15 @@ export interface PlayerSnapshot {
   assists: number;
   items: ItemInfo[];
   spells: string[];
+  /** Identifiants stables des sorts (ex. "SummonerFlash") ; absent ou [] pour les anciennes parties. */
+  spellKeys?: string[];
+}
+
+export type Role = "killer" | "victim" | "assist";
+
+export interface Involved {
+  name: string;
+  roles: Role[];
 }
 
 export interface Clip {
@@ -46,6 +55,10 @@ export interface Clip {
   endSecs: number;
   file: string | null;
   players: PlayerSnapshot[];
+  /** Joueurs impliqués ; absent ou [] pour les anciens clips. */
+  involved?: Involved[];
+  /** Or non dépensé du joueur local ; absent ou null si non enregistré. */
+  myGold?: number | null;
 }
 
 export interface Status {

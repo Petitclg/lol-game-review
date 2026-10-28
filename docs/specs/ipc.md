@@ -31,8 +31,14 @@ interface PlayerSnapshot {
   level: number;
   kills: number; deaths: number; assists: number;
   items: ItemInfo[];
-  spells: string[];         // sorts d'invocateur
+  spells: string[];         // sorts d'invocateur (noms affichés, selon la langue du jeu)
+  spellKeys: string[];      // identifiants stables, ex. "SummonerFlash" ; [] pour les anciennes parties
 }
+
+type Role = "killer" | "victim" | "assist";
+
+/** Joueur impliqué dans le moment du clip. `name` est égal à `PlayerSnapshot.name`. */
+interface Involved { name: string; roles: Role[] }
 
 interface Clip {
   id: string;
@@ -43,6 +49,8 @@ interface Clip {
   endSecs: number;
   file: string | null;      // chemin absolu du fichier clip, null si non généré
   players: PlayerSnapshot[]; // état de la partie au moment du clip
+  involved: Involved[];      // joueurs impliqués (tueur, victime, assistants), [] si inconnu
+  myGold: number | null;     // or non dépensé du joueur local, null si non enregistré
 }
 ```
 

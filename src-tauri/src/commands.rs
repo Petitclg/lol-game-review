@@ -2,7 +2,10 @@
 
 use crate::state::AppState;
 use lgr_core::session::Clip;
-use lgr_engine::{generate_clips as run_generation, merge_games, FfmpegCutter, GameEntry, Status};
+use lgr_engine::{
+    generate_clips as run_generation, load_clips as load_session_clips, merge_games, FfmpegCutter,
+    GameEntry, Status,
+};
 use lgr_lcu::{discover_lockfile_candidates, LcuApi, LcuClient};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -100,7 +103,7 @@ pub async fn get_clips(
     session_id: String,
 ) -> Result<Vec<Clip>, String> {
     let store = state.store.clone();
-    blocking(move || store.load_clips(&session_id).map_err(|e| e.to_string())).await
+    blocking(move || load_session_clips(&store, &session_id).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]

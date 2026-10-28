@@ -4,6 +4,7 @@ import type {
   Clip,
   ClipsProgress,
   GameEntry,
+  Involved,
   PlayerSnapshot,
   Status,
   Theme,
@@ -142,6 +143,45 @@ function buildGames(now: number): GameEntry[] {
   ];
 }
 
+const SPELL_KEYS: Record<string, string> = {
+  Flash: "SummonerFlash",
+  Ignite: "SummonerDot",
+  Teleport: "SummonerTeleport",
+  Heal: "SummonerHeal",
+  Smite: "SummonerSmite",
+  Barrier: "SummonerBarrier",
+  Exhaust: "SummonerExhaust",
+};
+
+/** Joueurs impliqués : 1v1 (kill, mort), 2v1 (assist), alliés seuls (objectif, tour). */
+function mockInvolved(theme: Theme, n: number, players: PlayerSnapshot[]): Involved[] {
+  const name = (i: number) => players[i]?.name ?? "";
+  const enemy = 5 + (n % 5);
+  switch (theme) {
+    case "kill":
+      return [
+        { name: name(0), roles: ["killer"] },
+        { name: name(enemy), roles: ["victim"] },
+      ];
+    case "death":
+      return [
+        { name: name(enemy), roles: ["killer"] },
+        { name: name(0), roles: ["victim"] },
+      ];
+    case "assist":
+      return [
+        { name: name(1), roles: ["killer"] },
+        { name: name(0), roles: ["assist"] },
+        { name: name(enemy), roles: ["victim"] },
+      ];
+    default:
+      return [
+        { name: name(0), roles: ["killer"] },
+        { name: name(2), roles: ["assist"] },
+      ];
+  }
+}
+
 function buildPlayers(game: GameEntry, rand: () => number, progress: number): PlayerSnapshot[] {
   const mine = CHAMPIONS[game.championId] ?? "Ahri";
   const allies = Object.values(CHAMPIONS).filter((n) => n !== mine);
@@ -156,6 +196,9 @@ function buildPlayers(game: GameEntry, rand: () => number, progress: number): Pl
         : (CHAMPIONS[ENEMY_POOL[i - 5] ?? 22] ?? "Ashe");
     const itemCount = Math.min(6, Math.floor(progress * 7 * (0.6 + rand() * 0.6)));
     const items = Array.from({ length: itemCount }, (_, k) => ITEMS[(i * 3 + k) % ITEMS.length]!);
+    const secondSpell = SPELLS[1 + Math.floor(rand() * (SPELLS.length - 1))] ?? "Ignite";
+    // quelques joueurs sans Flash pour varier les verdicts
+    const spells = i === 6 || i === 2 ? ["Ignite", "Teleport"] : ["Flash", secondSpell];
     players.push({
       name: isMe ? ME_NAME : `Joueur${i}#EUW`,
       champion,
@@ -166,7 +209,8 @@ function buildPlayers(game: GameEntry, rand: () => number, progress: number): Pl
       deaths: Math.floor(progress * rand() * 7),
       assists: Math.floor(progress * rand() * 10),
       items,
-      spells: ["Flash", SPELLS[1 + Math.floor(rand() * (SPELLS.length - 1))] ?? "Ignite"],
+      spells,
+      spellKeys: spells.map((s) => SPELL_KEYS[s] ?? s),
     });
   }
   return players;
@@ -196,15 +240,23 @@ export function buildMockClips(game: GameEntry): Clip[] {
       const t = Math.round(120 + rand() * (game.durationSecs - 180));
       const progress = t / game.durationSecs;
       const labels = LABELS[theme];
+      const label = labels[Math.floor(rand() * labels.length)] ?? "Évènement";
+      const players = buildPlayers(game, rand, progress);
+      const myGold = Math.round(100 + rand() * 1400);
+      // le premier clip « objectif » imite une partie enregistrée avant l'analyse
+      const oldStyle = theme === "objective" && n === 0;
+      const involved = oldStyle ? [] : mockInvolved(theme, n, players);
       clips.push({
         id: `${game.gameId}-${theme}-${n}`,
         theme,
-        label: labels[Math.floor(rand() * labels.length)] ?? "Évènement",
+        label,
         gameTimeSecs: t,
         startSecs: Math.max(0, t - 12),
         endSecs: t + 6,
         file: `C:\\mock\\clips\\${game.gameId}-${theme}-${n}.mp4`,
-        players: buildPlayers(game, rand, progress),
+        players: oldStyle ? players.map((p) => ({ ...p, spellKeys: [] })) : players,
+        involved,
+        myGold: oldStyle ? null : myGold,
       });
     }
   }

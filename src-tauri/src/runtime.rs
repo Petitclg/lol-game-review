@@ -51,6 +51,8 @@ pub fn spawn_monitor(app: AppHandle, state: &AppState) -> Option<JoinHandle<()>>
     let status = Arc::clone(&state.status);
 
     Some(thread::spawn(move || {
+        // A previous run may have been killed while recording; stop its ffmpeg first.
+        lgr_media::reap_orphans(store.root());
         let encoder = ffmpeg.as_deref().map_or(Encoder::X264, detect_encoder);
         let on_status = Arc::new(move |s: &Status| {
             if let Ok(mut current) = status.lock() {

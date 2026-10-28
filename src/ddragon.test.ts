@@ -4,6 +4,7 @@ import {
   findChampionByKey,
   findChampion,
   getDdragon,
+  getItemPrices,
   itemIconUrl,
   normalizeName,
   parseChampionIndex,
@@ -128,5 +129,51 @@ describe("getDdragon (fetch mocké)", () => {
   it("HTTP 500 sur versions.json → null", async () => {
     vi.stubGlobal("fetch", () => jsonResponse({}, false, 500));
     await expect(getDdragon()).resolves.toBeNull();
+  });
+});
+
+describe("getItemPrices (fetch mocké)", () => {
+  const ITEM_JSON = {
+    data: {
+      "3031": { gold: { total: 3400 } },
+      "2003": { gold: { total: 50 }, consumed: true },
+      "3340": { gold: { total: 0 } },
+    },
+  };
+
+  beforeEach(() => {
+    resetDdragonCache();
+    vi.stubGlobal("localStorage", memoryStorage());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("charge item.json par version, filtre consommables/babioles, mémorise", async () => {
+    const fetchMock = vi.fn((url: string) =>
+      url.endsWith("/cdn/14.2.1/data/en_US/item.json") ? jsonResponse(ITEM_JSON) : jsonResponse({}, false, 404),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const prices = await getItemPrices("14.2.1");
+    expect([...(prices ?? [])]).toEqual([[3031, 3400]]);
+    await getItemPrices("14.2.1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("hors ligne : sert le cache localStorage, sinon null", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
+    await expect(getItemPrices("14.2.1")).resolves.toBeNull();
+    vi.stubGlobal("fetch", () => jsonResponse(ITEM_JSON));
+    expect(await getItemPrices("14.2.1")).not.toBeNull();
+    resetDdragonCache();
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
+    expect((await getItemPrices("14.2.1"))?.get(3031)).toBe(3400);
+  });
+
+  it("HTTP 404 ou JSON inattendu → null", async () => {
+    vi.stubGlobal("fetch", () => jsonResponse({}, false, 404));
+    await expect(getItemPrices("14.2.1")).resolves.toBeNull();
+    vi.stubGlobal("fetch", () => jsonResponse({ nope: 1 }));
+    await expect(getItemPrices("14.2.1")).resolves.toBeNull();
   });
 });

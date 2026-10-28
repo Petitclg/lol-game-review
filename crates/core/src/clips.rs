@@ -59,6 +59,9 @@ mod tests {
             time_secs: t,
             theme: Theme::Kill,
             label: "Kill".into(),
+            killer: None,
+            victim: None,
+            assisters: Vec::new(),
         }
     }
 

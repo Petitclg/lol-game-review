@@ -3,7 +3,7 @@ import { createClipView } from "./components/clipView";
 import { createGameList } from "./components/gameList";
 import { createHeader } from "./components/header";
 import { createSidePanel } from "./components/sidePanel";
-import { getDdragon, type Ddragon } from "./ddragon";
+import { getDdragon, getItemPrices, type Ddragon, type ItemPrices } from "./ddragon";
 import { el, replaceChildren } from "./dom";
 import { createStore, selectedGame, type Store } from "./state/store";
 
@@ -28,6 +28,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function createApp(root: HTMLElement, backend: Backend): App {
   const store = createStore();
   let dd: Ddragon | null = null;
+  let prices: ItemPrices | null = null;
   const unlisteners: Array<() => void> = [];
 
   const header = createHeader();
@@ -64,7 +65,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     renderBanner();
     games.update(state, dd);
     clipView.update(state);
-    side.update(state, dd);
+    side.update(state, dd, prices);
   }
 
   function renderBanner(): void {
@@ -195,6 +196,11 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   void getDdragon().then((d) => {
     dd = d;
     render();
+    if (!d) return;
+    void getItemPrices(d.version).then((p) => {
+      prices = p;
+      render();
+    });
   });
 
   backend

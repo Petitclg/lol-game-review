@@ -99,9 +99,59 @@ export function itemIconUrl(version: string, itemId: number): string {
 }
 
 let ddragonPromise: Promise<Ddragon | null> | null = null;
+const pricesCache = new Map<string, Promise<ItemPrices | null>>();
 
 export function resetDdragonCache(): void {
   ddragonPromise = null;
+  pricesCache.clear();
+}
+
+/** Prix total (or) par identifiant d'item ; les consommables et les items gratuits (babioles) sont exclus. */
+export type ItemPrices = ReadonlyMap<number, number>;
+
+export function parseItemPrices(json: unknown): ItemPrices {
+  const prices = new Map<number, number>();
+  if (!isRecord(json) || !isRecord(json["data"])) return prices;
+  for (const [idText, entry] of Object.entries(json["data"])) {
+    const id = Number(idText);
+    if (!Number.isInteger(id) || !isRecord(entry)) continue;
+    if (entry["consumed"] === true) continue;
+    const gold = entry["gold"];
+    const total = isRecord(gold) ? gold["total"] : undefined;
+    if (typeof total === "number" && total > 0) prices.set(id, total);
+  }
+  return prices;
+}
+
+/** Prix des items (item.json) pour une version ; null si indisponible (hors ligne, sans cache). */
+export function getItemPrices(version: string): Promise<ItemPrices | null> {
+  let p = pricesCache.get(version);
+  if (!p) {
+    p = (async () => {
+      const cacheKey = `items.${version}`;
+      const cached = readCache<Record<string, number>>(cacheKey);
+      if (cached) {
+        return new Map(Object.entries(cached).map(([k, v]) => [Number(k), v] as const));
+      }
+      try {
+        const json = await fetchJson(
+          `${DDRAGON_BASE}/cdn/${encodeURIComponent(version)}/data/en_US/item.json`,
+        );
+        const prices = parseItemPrices(json);
+        if (prices.size === 0) return null;
+        writeCache(cacheKey, Object.fromEntries(prices));
+        return prices;
+      } catch {
+        return null;
+      }
+    })().then((result) => {
+      // ne pas mémoriser un échec : permettre une nouvelle tentative
+      if (!result) pricesCache.delete(version);
+      return result;
+    });
+    pricesCache.set(version, p);
+  }
+  return p;
 }
 
 async function loadVersion(): Promise<string | null> {

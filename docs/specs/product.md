@@ -13,7 +13,7 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 | F3 | Choisir une partie et générer l'analyse de ses clips. |
 | F4 | Clips par thème : kills, morts, assists, objectifs, tours, ultimates. |
 | F5 | Chaque clip montre l'action du joueur. |
-| F6 | Chaque clip expose les items, le niveau, le KDA et les sorts d'invocateur du joueur, des alliés et des adversaires. Les cooldowns sont hors périmètre (décision du 2026-10-28). |
+| F6 | Chaque clip expose les items, le niveau, le KDA et les sorts d'invocateur du joueur, des alliés et des adversaires, et analyse les joueurs impliqués dans le moment : niveaux d'avance, avance de valeur d'items, Flash équipé. Les cooldowns sont hors périmètre (décision du 2026-10-28). |
 | F7 | Mise à jour automatique vers la dernière release au démarrage. |
 
 ## Exigences non fonctionnelles
