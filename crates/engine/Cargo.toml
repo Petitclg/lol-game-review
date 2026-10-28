@@ -1,0 +1,24 @@
+[package]
+name = "lgr-engine"
+description = "Application services: game monitor, clip generation, game list"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "lgr_engine"
+
+[dependencies]
+lgr-core = { path = "../core" }
+lgr-lcu = { path = "../lcu" }
+lgr-live = { path = "../live" }
+lgr-media = { path = "../media" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

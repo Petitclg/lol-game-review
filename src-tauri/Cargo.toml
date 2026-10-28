@@ -1,0 +1,27 @@
+[package]
+name = "lol-game-review"
+description = "Review the highlights of your League of Legends games"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "lol_game_review_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lgr-core = { path = "../crates/core" }
+lgr-engine = { path = "../crates/engine" }
+lgr-lcu = { path = "../crates/lcu" }
+lgr-live = { path = "../crates/live" }
+lgr-media = { path = "../crates/media" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"

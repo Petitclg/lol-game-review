@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Raw event as returned by `GET /liveclientdata/eventdata` (subset of fields).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RawLiveEvent {
     #[serde(rename = "EventID")]
@@ -56,15 +56,17 @@ pub struct Highlight {
     pub label: String,
 }
 
-/// Returns the highlights of `player` among `events`, sorted by time.
+/// Returns the highlights of the player among `events`, sorted by time.
 ///
+/// `aliases` are all the names under which the Live Client API may refer to the
+/// player (Riot ID, game name, summoner name).
 /// Objectives and turrets count only when the player got the last hit or an assist.
 /// Ultimates are not exposed by the Live Client API and are out of scope here.
 #[must_use]
-pub fn classify(events: &[RawLiveEvent], player: &str) -> Vec<Highlight> {
+pub fn classify<S: AsRef<str>>(events: &[RawLiveEvent], aliases: &[S]) -> Vec<Highlight> {
     let mut out: Vec<Highlight> = events
         .iter()
-        .filter_map(|e| classify_one(e, player))
+        .filter_map(|e| classify_one(e, aliases))
         .collect();
     out.sort_by(|a, b| {
         a.time_secs
@@ -74,20 +76,22 @@ pub fn classify(events: &[RawLiveEvent], player: &str) -> Vec<Highlight> {
     out
 }
 
-fn is(name: Option<&str>, player: &str) -> bool {
-    name == Some(player)
+fn is<S: AsRef<str>>(name: Option<&str>, aliases: &[S]) -> bool {
+    name.is_some_and(|n| aliases.iter().any(|a| a.as_ref() == n))
 }
 
-fn classify_one(e: &RawLiveEvent, player: &str) -> Option<Highlight> {
-    let killer = is(e.killer_name.as_deref(), player);
-    let assisted = e.assisters.iter().any(|a| a == player);
+fn classify_one<S: AsRef<str>>(e: &RawLiveEvent, aliases: &[S]) -> Option<Highlight> {
+    let killer = is(e.killer_name.as_deref(), aliases);
+    let assisted = e.assisters.iter().any(|a| is(Some(a), aliases));
     let (theme, label) = match e.event_name.as_str() {
         "ChampionKill" if killer => (Theme::Kill, "Kill"),
-        "ChampionKill" if is(e.victim_name.as_deref(), player) => (Theme::Death, "Death"),
+        "ChampionKill" if is(e.victim_name.as_deref(), aliases) => (Theme::Death, "Death"),
         "ChampionKill" if assisted => (Theme::Assist, "Assist"),
         "DragonKill" if killer || assisted => (Theme::Objective, "Dragon"),
         "BaronKill" if killer || assisted => (Theme::Objective, "Baron"),
         "HeraldKill" if killer || assisted => (Theme::Objective, "Herald"),
+        "HordeKill" if killer || assisted => (Theme::Objective, "Void Grub"),
+        "AtakhanKill" if killer || assisted => (Theme::Objective, "Atakhan"),
         "TurretKilled" if killer || assisted => (Theme::Turret, "Turret"),
         "InhibKilled" if killer || assisted => (Theme::Turret, "Inhibitor"),
         _ => return None,
@@ -116,7 +120,15 @@ mod tests {
     ]}"#;
 
     fn highlights() -> Vec<Highlight> {
-        classify(&parse_events(PAYLOAD).unwrap(), "Me")
+        classify(&parse_events(PAYLOAD).unwrap(), &["Me"])
+    }
+
+    #[test]
+    fn matches_any_alias() {
+        let events = parse_events(PAYLOAD).unwrap();
+        let h = classify(&events, &["Me#EUW", "Me"]);
+        assert_eq!(h.len(), 5);
+        assert!(classify(&events, &["Nobody"]).is_empty());
     }
 
     #[test]

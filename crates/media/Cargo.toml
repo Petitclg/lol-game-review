@@ -1,0 +1,19 @@
+[package]
+name = "lgr-media"
+description = "Silent screen recording and clip cutting through ffmpeg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "lgr_media"
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

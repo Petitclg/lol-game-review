@@ -1,43 +1,64 @@
 # LoL Game Review
 
-Application de bureau Windows (Tauri) pour revoir les moments forts de ses parties de League of Legends.
+Application de bureau Windows (Tauri) pour revoir les moments forts de ses parties de League of Legends : kills, morts, assists, objectifs et tours, avec les items et les rangs de sorts au moment de l'action.
 
-## État
+## Fonctionnement
 
-Projet en démarrage. Livré à ce stade :
+1. L'application reste active dans la zone de notification (fermer la fenêtre ne la quitte pas).
+2. Quand une partie démarre (Live Client Data API), elle enregistre l'écran en arrière-plan : encodeur matériel (NVENC, AMF ou Quick Sync), pas d'audio, aucune fenêtre, priorité réduite.
+3. À la fin de la partie, la chronologie et l'état des 10 joueurs sont sauvegardés.
+4. Dans l'interface, choisissez une partie récente (client LoL) et générez les clips : découpe sans ré-encodage, silencieuse et rapide.
+5. Parcourez les clips par thème ; le panneau latéral montre les items, KDA et sorts de chaque joueur.
+6. Au démarrage, l'application se met à jour vers la dernière release GitHub (jamais pendant une partie).
 
-- `crates/core` (`lgr-core`) : logique métier pure et testée
-  - classification des événements de la Live Client Data API (kill, mort, assist, objectifs, tours) ;
-  - fenêtres de clips (pré/post-roll, fusion des chevauchements) ;
-  - calcul des cooldowns (ability haste).
-- `crates/lcu` (`lgr-lcu`) : client de l'API locale du client LoL
-  - découverte et parsing du `lockfile` (mot de passe jamais journalisé) ;
-  - compte actif et parties récentes, testés contre un serveur HTTP local factice.
+Seules les parties jouées **pendant que l'application tourne** ont une vidéo ([ADR 0001](docs/adr/0001-recording-during-game.md)).
 
-Le reste est décrit dans [docs/specs/product.md](docs/specs/product.md) et suivi dans le plan de développement.
+## Limites connues
 
-## Principes
+- Les ultimates ne sont pas détectables : la Live Client API n'expose pas les lancements de sorts.
+- Les cooldowns affichés sont les cooldowns de base au rang actuel, avec l'ability haste du joueur (estimation), pas les temps restants.
+- Il faut lancer l'application avant la partie (pas de démarrage automatique avec Windows pour l'instant).
+- La compatibilité de la capture avec Riot Vanguard doit être validée en conditions réelles.
 
-- Silencieux : aucune fenêtre, aucun son, aucun vol de focus.
-- Léger : enregistrement par encodeur matériel, processus à priorité basse.
-- Pas d'interférence avec une partie en cours.
-- Respect de la politique développeur de Riot Games : aucune automatisation de l'interface du jeu, aucune donnée cachée.
+## Architecture
+
+| Élément | Rôle |
+|---|---|
+| [crates/core](crates/core) | Événements, fenêtres de clips, cooldowns, modèle de session, stockage fichiers |
+| [crates/lcu](crates/lcu) | API locale du client LoL : compte actif, parties récentes |
+| [crates/live](crates/live) | Live Client Data API, suivi de session pendant la partie |
+| [crates/media](crates/media) | ffmpeg : enregistrement silencieux, découpe des clips |
+| [crates/engine](crates/engine) | Moniteur de partie, génération des clips, liste des parties |
+| [src-tauri](src-tauri) | Coque Tauri : commandes IPC, zone de notification, mise à jour |
+| [src](src) | Interface TypeScript (sans framework) |
+
+Spécifications : [produit](docs/specs/product.md), [contrat IPC](docs/specs/ipc.md).
 
 ## Développement
 
-Prérequis : Rust stable (MSVC), Node.js 22+, Build Tools Visual Studio (charge de travail C++).
+Prérequis : Rust stable (MSVC), Node.js 22+, Build Tools Visual Studio (charge de travail C++), ffmpeg (`winget install Gyan.FFmpeg`, ou variable `LGR_FFMPEG`).
 
 ```powershell
+npm ci
+npm run dev            # interface seule, avec backend simulé dans le navigateur
+npm run tauri dev      # application complète
+npm run typecheck; npm run lint; npm test
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+`LGR_REQUIRE_FFMPEG=1` fait échouer (au lieu d'ignorer) les tests qui ont besoin de ffmpeg.
+
+## Release et mise à jour
+
+Pousser un tag `vX.Y.Z` égal à la version de `src-tauri/tauri.conf.json` déclenche [release.yml](.github/workflows/release.yml) : build, ffmpeg LGPL embarqué, installeur NSIS signé et `latest.json` publiés sur la release. Le dépôt doit contenir les secrets `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+
 ## Conventions
 
 - Commits : [Conventional Commits](https://www.conventionalcommits.org/).
-- Toute décision d'architecture structurante est consignée dans [docs/adr](docs/adr).
+- Décisions d'architecture : [docs/adr](docs/adr).
 
 ## Licence
 
-MIT, voir [LICENSE](LICENSE). Ce projet n'est pas affilié à Riot Games.
+MIT, voir [LICENSE](LICENSE). Ce projet n'est pas affilié à Riot Games. FFmpeg (LGPL) est embarqué dans les releases, voir [THIRD_PARTY.md](THIRD_PARTY.md).

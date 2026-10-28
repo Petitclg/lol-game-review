@@ -1,0 +1,20 @@
+[package]
+name = "lgr-live"
+description = "Live Client Data API client and session tracking"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "lgr_live"
+
+[dependencies]
+lgr-core = { path = "../core" }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[lints]
+workspace = true
