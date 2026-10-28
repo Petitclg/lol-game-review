@@ -37,13 +37,6 @@ export interface PlayerSnapshot {
   spells: string[];
 }
 
-export interface AbilityRanks {
-  q: number;
-  w: number;
-  e: number;
-  r: number;
-}
-
 export interface Clip {
   id: string;
   theme: Theme;
@@ -53,8 +46,6 @@ export interface Clip {
   endSecs: number;
   file: string | null;
   players: PlayerSnapshot[];
-  abilityRanks: AbilityRanks | null;
-  abilityHaste: number | null;
 }
 
 export interface Status {

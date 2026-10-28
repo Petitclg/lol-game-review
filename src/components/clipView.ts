@@ -21,6 +21,13 @@ export const THEME_NAMES: Record<Clip["theme"], string> = {
   turret: "Tour",
 };
 
+export const MEDIA_ERROR_REASONS: Record<number, string> = {
+  1: "lecture interrompue",
+  2: "erreur réseau ou fichier inaccessible",
+  3: "erreur de décodage de la vidéo",
+  4: "format non pris en charge ou fichier introuvable / accès refusé",
+};
+
 export interface ClipViewHandlers {
   onGenerate(): void;
   onDeleteRecording(): void;
@@ -71,6 +78,19 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
     attrs: { controls: true, preload: "metadata", "aria-label": "Lecteur de clip" },
   });
   const videoMsg = el("p", { class: "video-msg muted" });
+  const videoErrText = el("p", { class: "video-error-text" });
+  const videoErrFile = el("p", { class: "video-error-file small muted" });
+  const retryBtn = el("button", {
+    class: "btn btn-small",
+    text: "Réessayer",
+    attrs: { type: "button" },
+    on: { click: () => retryVideo() },
+  });
+  const videoErr = el(
+    "div",
+    { class: "alert alert-error video-error", attrs: { role: "alert", hidden: true } },
+    [videoErrText, videoErrFile, retryBtn],
+  );
   const prevBtn = el("button", {
     class: "btn",
     text: "← Précédent",
@@ -85,7 +105,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   });
   const clipTitle = el("h3", { class: "clip-title" });
   const nav = el("div", { class: "player-nav" }, [prevBtn, clipTitle, nextBtn]);
-  const player = el("div", { class: "clip-player" }, [video, videoMsg, nav]);
+  const player = el("div", { class: "clip-player" }, [video, videoMsg, videoErr, nav]);
   const browser = el("div", { class: "clip-browser", attrs: { id: "clip-panel", role: "tabpanel" } }, [player, listEl]);
 
   const placeholder = el("p", { class: "placeholder muted" });
@@ -101,9 +121,45 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   let renderedClipsRef: unknown;
   let renderedTheme: ThemeFilter | undefined;
   let renderedSelected: string | null | undefined;
+  let playingClip: Clip | null = null;
+  let playingSrc: string | null = null;
+
+  function hideVideoError(): void {
+    videoErr.hidden = true;
+    videoErrText.textContent = "";
+    videoErrFile.textContent = "";
+  }
+
+  function retryVideo(): void {
+    if (!playingSrc) return;
+    hideVideoError();
+    video.src = playingSrc;
+    video.load();
+  }
+
+  video.addEventListener("error", () => {
+    if (!video.getAttribute("src") || !playingClip) return;
+    const err = video.error;
+    const code = err?.code ?? 0;
+    const reason = MEDIA_ERROR_REASONS[code] ?? "erreur de lecture inconnue";
+    const detail = err?.message ? ` — ${err.message}` : "";
+    console.error("Lecture du clip impossible", {
+      clipId: playingClip.id,
+      file: playingClip.file,
+      src: playingSrc,
+      code,
+      message: err?.message,
+    });
+    videoErrText.textContent = `Impossible de lire ce clip : ${reason} (code ${code}${detail})`;
+    videoErrFile.textContent = `Fichier : ${playingClip.file ?? "inconnu"}`;
+    videoErr.hidden = false;
+  });
 
   function stopVideo(): void {
     renderedClipId = undefined;
+    playingClip = null;
+    playingSrc = null;
+    hideVideoError();
     if (!video.hasAttribute("src")) return;
     video.pause();
     video.removeAttribute("src");
@@ -113,24 +169,22 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   function updatePlayer(clip: Clip | null): void {
     const id = clip?.id ?? null;
     if (id === renderedClipId) return;
+    stopVideo();
     renderedClipId = id;
-    if (!clip) {
-      video.removeAttribute("src");
-      video.load();
-      return;
-    }
+    if (!clip) return;
+    playingClip = clip;
     const src = clip.file ? backend.videoSrc(clip.file) : null;
     if (src) {
+      playingSrc = src;
       video.src = src;
       video.hidden = false;
       videoMsg.hidden = true;
     } else {
-      video.removeAttribute("src");
       video.hidden = true;
       videoMsg.hidden = false;
       videoMsg.textContent = clip.file
         ? "Aperçu vidéo indisponible en mode simulé (navigateur)."
-        : "Ce clip n'a pas encore été généré.";
+        : "Clip non généré : le fichier vidéo n'existe pas encore.";
     }
   }
 

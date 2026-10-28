@@ -33,36 +33,6 @@ pub struct ActivePlayer {
     pub riot_id_game_name: String,
     #[serde(default)]
     pub summoner_name: String,
-    #[serde(default)]
-    pub abilities: Abilities,
-    #[serde(default)]
-    pub champion_stats: ChampionStats,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct Abilities {
-    #[serde(default, rename = "Q")]
-    pub q: Ability,
-    #[serde(default, rename = "W")]
-    pub w: Ability,
-    #[serde(default, rename = "E")]
-    pub e: Ability,
-    #[serde(default, rename = "R")]
-    pub r: Ability,
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Ability {
-    #[serde(default)]
-    pub ability_level: u32,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChampionStats {
-    #[serde(default)]
-    pub ability_haste: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -176,9 +146,7 @@ mod tests {
     use super::*;
 
     pub const SAMPLE: &str = r#"{
-      "activePlayer":{"riotId":"Me#EUW","riotIdGameName":"Me","summonerName":"Me#EUW",
-        "abilities":{"Q":{"abilityLevel":3},"W":{"abilityLevel":1},"E":{"abilityLevel":1},"R":{"abilityLevel":1},"Passive":{"displayName":"x"}},
-        "championStats":{"abilityHaste":20.0}},
+      "activePlayer":{"riotId":"Me#EUW","riotIdGameName":"Me","summonerName":"Me#EUW"},
       "allPlayers":[
         {"riotId":"Me#EUW","summonerName":"Me#EUW","championName":"Wukong","rawChampionName":"game_character_displayname_MonkeyKing",
          "team":"ORDER","level":8,"scores":{"kills":2,"deaths":1,"assists":3},
@@ -194,8 +162,6 @@ mod tests {
     fn parses_sample() {
         let d = AllGameData::parse(SAMPLE).unwrap();
         assert!((d.game_data.game_time - 123.4).abs() < 1e-9);
-        assert_eq!(d.active_player.abilities.q.ability_level, 3);
-        assert_eq!(d.active_player.champion_stats.ability_haste, Some(20.0));
         assert_eq!(d.all_players.len(), 2);
         assert_eq!(d.all_players[0].items[0].item_id, 1001);
     }

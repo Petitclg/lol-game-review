@@ -267,8 +267,7 @@ button:disabled {
 /* Games */
 .game-list,
 .clip-list,
-.player-list,
-.ability-list {
+.player-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -493,6 +492,18 @@ button:disabled {
   min-width: 0;
 }
 
+.video-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.video-error p {
+  margin: 0;
+}
+
 .player-nav {
   display: flex;
   align-items: center;
@@ -665,52 +676,4 @@ button:disabled {
   height: 22px;
   border-radius: 3px;
   background: var(--bg);
-}
-
-.abilities h3 {
-  margin-bottom: 0.3rem;
-}
-
-.ability-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-top: 0.4rem;
-}
-
-.ability {
-  display: grid;
-  grid-template-columns: 1.6rem minmax(0, 1fr) auto;
-  grid-template-areas:
-    "key name rank"
-    "key cd cd";
-  gap: 0 0.5rem;
-  padding: 0.3rem 0.5rem;
-  background: var(--bg-elev2);
-  border-radius: 6px;
-  align-items: center;
-}
-
-.ability-key {
-  grid-area: key;
-  font-weight: 700;
-  color: var(--accent);
-  font-size: 1.1rem;
-}
-.ability-name {
-  grid-area: name;
-  font-size: 0.85rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ability-rank {
-  grid-area: rank;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-.ability-cd {
-  grid-area: cd;
-  font-size: 0.82rem;
-  font-variant-numeric: tabular-nums;
 }

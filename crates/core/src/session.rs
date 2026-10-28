@@ -26,21 +26,11 @@ pub struct PlayerSnapshot {
     pub spells: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct AbilityRanks {
-    pub q: u32,
-    pub w: u32,
-    pub e: u32,
-    pub r: u32,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub game_time_secs: f64,
     pub players: Vec<PlayerSnapshot>,
-    pub ability_ranks: Option<AbilityRanks>,
-    pub ability_haste: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,8 +62,6 @@ pub struct Clip {
     pub end_secs: f64,
     pub file: Option<String>,
     pub players: Vec<PlayerSnapshot>,
-    pub ability_ranks: Option<AbilityRanks>,
-    pub ability_haste: Option<f64>,
 }
 
 /// Converts a game time to a position in the recorded video (never negative).
@@ -157,8 +145,6 @@ pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
                 end_secs: to_video_time(w.end_secs, session.video_anchor_secs),
                 file: None,
                 players: snap.map(|s| s.players.clone()).unwrap_or_default(),
-                ability_ranks: snap.and_then(|s| s.ability_ranks),
-                ability_haste: snap.and_then(|s| s.ability_haste),
             });
         }
     }
@@ -197,13 +183,6 @@ mod tests {
                 items: vec![],
                 spells: vec![],
             }],
-            ability_ranks: Some(AbilityRanks {
-                q: 1,
-                w: 1,
-                e: 1,
-                r: 0,
-            }),
-            ability_haste: Some(10.0),
         }
     }
 
@@ -238,7 +217,15 @@ mod tests {
         let clips = build_clips(&s, ClipConfig::default());
         assert_eq!(clips.len(), 1);
         assert_eq!(clips[0].players[0].level, 6);
-        assert_eq!(clips[0].ability_haste, Some(10.0));
+    }
+
+    #[test]
+    fn sessions_saved_with_legacy_ability_fields_still_load() {
+        let json = r#"{"id":"s","startedAtMs":1,"playerAliases":[],"videoAnchorSecs":0.0,
+            "recordingFile":null,"lastGameTimeSecs":1.0,"events":[],
+            "snapshots":[{"gameTimeSecs":1.0,"players":[],"abilityRanks":{"q":1,"w":1,"e":1,"r":0},"abilityHaste":10.0}]}"#;
+        let s: Session = serde_json::from_str(json).unwrap();
+        assert_eq!(s.snapshots.len(), 1);
     }
 
     #[test]

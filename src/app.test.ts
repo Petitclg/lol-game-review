@@ -55,8 +55,8 @@ describe("application (backend simulé, hors ligne)", () => {
     root.querySelector<HTMLElement>('[data-theme="kill"]')?.click();
     expect(root.querySelectorAll(".clip-item").length).toBeLessThan(total);
     expect(root.querySelector('[data-theme="kill"]')?.getAttribute("aria-selected")).toBe("true");
-    expect(root.textContent).toContain("Cooldown de base au rang actuel (estimation)");
-    expect(root.textContent).toContain("Data Dragon hors ligne");
+    expect(root.textContent).not.toMatch(/cooldown/i);
+    expect(root.querySelector(".abilities")).toBeNull();
     expect(root.querySelectorAll(".player-list > li").length).toBe(10);
     expect(root.querySelectorAll(".player-list > li.me").length).toBe(1);
     // le conteneur du lecteur ne doit pas partager de classe avec les lignes joueurs (régression de mise en page)

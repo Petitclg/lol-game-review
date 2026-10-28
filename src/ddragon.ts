@@ -1,5 +1,3 @@
-import { baseCooldownForRank } from "./cooldown";
-
 export const DDRAGON_BASE = "https://ddragon.leagueoflegends.com";
 
 export interface ChampionRef {
@@ -15,12 +13,6 @@ export interface ChampionIndex {
   byKey: Map<number, ChampionRef>;
   byId: Map<string, ChampionRef>;
   byName: Map<string, ChampionRef>;
-}
-
-export interface SpellInfo {
-  id: string;
-  name: string;
-  cooldown: number[];
 }
 
 export interface Ddragon {
@@ -106,40 +98,10 @@ export function itemIconUrl(version: string, itemId: number): string {
   return `${DDRAGON_BASE}/cdn/${encodeURIComponent(version)}/img/item/${Math.trunc(itemId)}.png`;
 }
 
-export function parseSpells(json: unknown, championId: string): SpellInfo[] {
-  if (!isRecord(json) || !isRecord(json["data"])) return [];
-  const champ = json["data"][championId];
-  if (!isRecord(champ) || !Array.isArray(champ["spells"])) return [];
-  const out: SpellInfo[] = [];
-  for (const s of champ["spells"] as unknown[]) {
-    if (!isRecord(s)) continue;
-    const cooldown = Array.isArray(s["cooldown"])
-      ? (s["cooldown"] as unknown[]).filter((n): n is number => typeof n === "number")
-      : [];
-    out.push({
-      id: typeof s["id"] === "string" ? s["id"] : "",
-      name: typeof s["name"] === "string" ? s["name"] : "",
-      cooldown,
-    });
-  }
-  return out;
-}
-
-/** Cooldown de base d'un sort (index 0..3 = Q/W/E/R) pour un rang donné. */
-export function spellBaseCooldown(
-  spells: readonly SpellInfo[],
-  slot: number,
-  rank: number,
-): number | null {
-  return baseCooldownForRank(spells[slot]?.cooldown, rank);
-}
-
 let ddragonPromise: Promise<Ddragon | null> | null = null;
-const spellsCache = new Map<string, Promise<SpellInfo[] | null>>();
 
 export function resetDdragonCache(): void {
   ddragonPromise = null;
-  spellsCache.clear();
 }
 
 async function loadVersion(): Promise<string | null> {
@@ -184,33 +146,4 @@ export function getDdragon(): Promise<Ddragon | null> {
     });
   }
   return ddragonPromise;
-}
-
-export function getChampionSpells(
-  version: string,
-  championId: string,
-): Promise<SpellInfo[] | null> {
-  const key = `${version}/${championId}`;
-  let p = spellsCache.get(key);
-  if (!p) {
-    p = (async () => {
-      const cacheKey = `spells.${key}`;
-      try {
-        const json = await fetchJson(
-          `${DDRAGON_BASE}/cdn/${encodeURIComponent(version)}/data/en_US/champion/${encodeURIComponent(championId)}.json`,
-        );
-        const spells = parseSpells(json, championId);
-        if (spells.length === 0) return null;
-        writeCache(cacheKey, spells);
-        return spells;
-      } catch {
-        return readCache<SpellInfo[]>(cacheKey);
-      }
-    })().then((s) => {
-      if (!s) spellsCache.delete(key);
-      return s;
-    });
-    spellsCache.set(key, p);
-  }
-  return p;
 }

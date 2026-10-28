@@ -34,8 +34,6 @@ interface PlayerSnapshot {
   spells: string[];         // sorts d'invocateur
 }
 
-interface AbilityRanks { q: number; w: number; e: number; r: number }
-
 interface Clip {
   id: string;
   theme: Theme;
@@ -45,8 +43,6 @@ interface Clip {
   endSecs: number;
   file: string | null;      // chemin absolu du fichier clip, null si non généré
   players: PlayerSnapshot[]; // état de la partie au moment du clip
-  abilityRanks: AbilityRanks | null;  // rangs de mes sorts
-  abilityHaste: number | null;        // mon ability haste
 }
 ```
 
@@ -80,4 +76,4 @@ Les fichiers clip sont lus dans une balise `<video>` via `convertFileSrc(clip.fi
 
 ## Données externes (interface seulement)
 
-Noms et icônes de champions, icônes d'items : Data Dragon (`https://ddragon.leagueoflegends.com`). La version courante vient de `/api/versions.json`. Les cooldowns de base par rang viennent de `/cdn/<version>/data/en_US/champion/<Champion>.json`.
+Noms et icônes de champions, icônes d'items : Data Dragon (`https://ddragon.leagueoflegends.com`). La version courante vient de `/api/versions.json`.

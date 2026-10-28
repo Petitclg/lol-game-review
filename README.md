@@ -16,7 +16,7 @@ Seules les parties jouées **pendant que l'application tourne** ont une vidéo (
 ## Limites connues
 
 - Les ultimates ne sont pas détectables : la Live Client API n'expose pas les lancements de sorts.
-- Les cooldowns affichés sont les cooldowns de base au rang actuel, avec l'ability haste du joueur (estimation), pas les temps restants.
+- Les cooldowns ne sont pas affichés (abandonnés pour cette version) : seuls les items, le niveau, le KDA et les sorts d'invocateur de chaque joueur le sont.
 - Il faut lancer l'application avant la partie (pas de démarrage automatique avec Windows pour l'instant).
 - La compatibilité de la capture avec Riot Vanguard doit être validée en conditions réelles.
 
@@ -24,7 +24,7 @@ Seules les parties jouées **pendant que l'application tourne** ont une vidéo (
 
 | Élément | Rôle |
 |---|---|
-| [crates/core](crates/core) | Événements, fenêtres de clips, cooldowns, modèle de session, stockage fichiers |
+| [crates/core](crates/core) | Événements, fenêtres de clips, modèle de session, stockage fichiers |
 | [crates/lcu](crates/lcu) | API locale du client LoL : compte actif, parties récentes |
 | [crates/live](crates/live) | Live Client Data API, suivi de session pendant la partie |
 | [crates/media](crates/media) | ffmpeg : enregistrement silencieux, découpe des clips |

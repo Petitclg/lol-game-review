@@ -10,8 +10,6 @@ export function makeClip(id: string, theme: Theme, gameTimeSecs: number, extra: 
     endSecs: gameTimeSecs + 5,
     file: `C:\\clips\\${id}.mp4`,
     players: [],
-    abilityRanks: null,
-    abilityHaste: null,
     ...extra,
   };
 }

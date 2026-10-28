@@ -1,9 +1,7 @@
 //! Builds a [`Session`] incrementally from successive Live Client API samples.
 
 use crate::models::AllGameData;
-use lgr_core::session::{
-    anchor_from_sample, AbilityRanks, ItemInfo, PlayerSnapshot, Session, Snapshot,
-};
+use lgr_core::session::{anchor_from_sample, ItemInfo, PlayerSnapshot, Session, Snapshot};
 
 /// Minimum game-time gap between two stored snapshots.
 const SNAPSHOT_INTERVAL_SECS: f64 = 3.0;
@@ -107,13 +105,6 @@ fn snapshot(data: &AllGameData) -> Snapshot {
     Snapshot {
         game_time_secs: data.game_data.game_time,
         players,
-        ability_ranks: Some(AbilityRanks {
-            q: me.abilities.q.ability_level,
-            w: me.abilities.w.ability_level,
-            e: me.abilities.e.ability_level,
-            r: me.abilities.r.ability_level,
-        }),
-        ability_haste: me.champion_stats.ability_haste,
     }
 }
 
@@ -128,9 +119,7 @@ mod tests {
             })
             .collect();
         let json = format!(
-            r#"{{"activePlayer":{{"riotId":"Me#EUW","riotIdGameName":"Me","summonerName":"Me#EUW",
-            "abilities":{{"Q":{{"abilityLevel":2}},"W":{{"abilityLevel":1}},"E":{{"abilityLevel":0}},"R":{{"abilityLevel":0}}}},
-            "championStats":{{"abilityHaste":15.0}}}},
+            r#"{{"activePlayer":{{"riotId":"Me#EUW","riotIdGameName":"Me","summonerName":"Me#EUW"}},
             "allPlayers":[{{"riotId":"Me#EUW","summonerName":"Me#EUW","championName":"Ahri","team":"ORDER","level":3,
               "scores":{{"kills":1,"deaths":0,"assists":0}},"items":[{{"itemID":1055,"displayName":"Doran's Blade"}}],
               "summonerSpells":{{"summonerSpellOne":{{"displayName":"Flash"}},"summonerSpellTwo":{{"displayName":"Ignite"}}}}}},
@@ -151,8 +140,6 @@ mod tests {
         assert!(snap.players[0].is_me && !snap.players[1].is_me);
         assert_eq!(snap.players[0].items[0].id, 1055);
         assert_eq!(snap.players[0].spells, ["Flash", "Ignite"]);
-        assert_eq!(snap.ability_ranks.unwrap().q, 2);
-        assert_eq!(snap.ability_haste, Some(15.0));
     }
 
     #[test]

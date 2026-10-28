@@ -196,7 +196,6 @@ export function buildMockClips(game: GameEntry): Clip[] {
       const t = Math.round(120 + rand() * (game.durationSecs - 180));
       const progress = t / game.durationSecs;
       const labels = LABELS[theme];
-      const rank = (max: number) => Math.min(max, Math.max(1, Math.round(progress * max)));
       clips.push({
         id: `${game.gameId}-${theme}-${n}`,
         theme,
@@ -206,8 +205,6 @@ export function buildMockClips(game: GameEntry): Clip[] {
         endSecs: t + 6,
         file: `C:\\mock\\clips\\${game.gameId}-${theme}-${n}.mp4`,
         players: buildPlayers(game, rand, progress),
-        abilityRanks: { q: rank(5), w: rank(5), e: rank(5), r: progress < 0.25 ? 0 : rank(3) },
-        abilityHaste: Math.round(progress * 40),
       });
     }
   }

@@ -3,14 +3,11 @@ import {
   championIconUrl,
   findChampionByKey,
   findChampion,
-  getChampionSpells,
   getDdragon,
   itemIconUrl,
   normalizeName,
   parseChampionIndex,
-  parseSpells,
   resetDdragonCache,
-  spellBaseCooldown,
 } from "./ddragon";
 
 const CHAMPION_JSON = {
@@ -19,20 +16,6 @@ const CHAMPION_JSON = {
     Kaisa: { id: "Kaisa", key: "145", name: "Kai'Sa" },
     Ahri: { id: "Ahri", key: "103", name: "Ahri" },
     Broken: { id: "Broken", key: "abc", name: "Broken" },
-  },
-};
-
-const AHRI_DETAIL = {
-  data: {
-    Ahri: {
-      id: "Ahri",
-      spells: [
-        { id: "AhriQ", name: "Orb of Deception", cooldown: [7, 7, 7, 7, 7] },
-        { id: "AhriW", name: "Fox-Fire", cooldown: [9, 8, 7, 6, 5] },
-        { id: "AhriE", name: "Charm", cooldown: [14, 13, 12, 11, 10] },
-        { id: "AhriR", name: "Spirit Rush", cooldown: [130, 105, 80] },
-      ],
-    },
   },
 };
 
@@ -100,22 +83,6 @@ describe("URLs", () => {
   });
 });
 
-describe("parseSpells / spellBaseCooldown", () => {
-  const spells = parseSpells(AHRI_DETAIL, "Ahri");
-  it("extrait 4 sorts", () => {
-    expect(spells.map((s) => s.id)).toEqual(["AhriQ", "AhriW", "AhriE", "AhriR"]);
-  });
-  it("cooldown par slot et rang", () => {
-    expect(spellBaseCooldown(spells, 1, 3)).toBe(7);
-    expect(spellBaseCooldown(spells, 3, 1)).toBe(130);
-    expect(spellBaseCooldown(spells, 3, 0)).toBeNull();
-    expect(spellBaseCooldown(spells, 9, 1)).toBeNull();
-  });
-  it("champion absent → []", () => {
-    expect(parseSpells(AHRI_DETAIL, "Zed")).toEqual([]);
-  });
-});
-
 describe("getDdragon (fetch mocké)", () => {
   beforeEach(() => {
     resetDdragonCache();
@@ -161,20 +128,5 @@ describe("getDdragon (fetch mocké)", () => {
   it("HTTP 500 sur versions.json → null", async () => {
     vi.stubGlobal("fetch", () => jsonResponse({}, false, 500));
     await expect(getDdragon()).resolves.toBeNull();
-  });
-
-  it("charge les sorts d'un champion, puis les sert depuis le cache hors ligne", async () => {
-    vi.stubGlobal("fetch", () => jsonResponse(AHRI_DETAIL));
-    const spells = await getChampionSpells("14.2.1", "Ahri");
-    expect(spells).toHaveLength(4);
-    resetDdragonCache();
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
-    const cached = await getChampionSpells("14.2.1", "Ahri");
-    expect(cached?.[3]?.cooldown).toEqual([130, 105, 80]);
-  });
-
-  it("sorts indisponibles hors ligne et sans cache → null", async () => {
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
-    await expect(getChampionSpells("14.2.1", "Zed")).resolves.toBeNull();
   });
 });
