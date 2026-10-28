@@ -18,4 +18,4 @@ Il faut persister, par partie, la chronologie, les instantanés de joueurs, l'en
 
 - Pas de migration de schéma complexe ; un champ ajouté doit rester compatible avec les sessions existantes (valeurs par défaut serde).
 - La précision de synchronisation dépend du délai de démarrage de ffmpeg (estimé à 300 ms) ; à calibrer en conditions réelles.
-- Les processus ffmpeg orphelins en cas de plantage brutal de l'application ne sont pas encore gérés (un job object Windows serait nécessaire).
+- Un ffmpeg ne doit jamais survivre à l'application : chaque enregistrement écrit `recording.mkv.pid`, les orphelins sont arrêtés au démarrage suivant (`reap_orphans`), et ffmpeg s'arrête de lui-même après 4 h (`-t 14400`). Un job object Windows serait plus strict mais exigerait du code `unsafe`.
