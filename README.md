@@ -10,6 +10,9 @@ Projet en démarrage. Livré à ce stade :
   - classification des événements de la Live Client Data API (kill, mort, assist, objectifs, tours) ;
   - fenêtres de clips (pré/post-roll, fusion des chevauchements) ;
   - calcul des cooldowns (ability haste).
+- `crates/lcu` (`lgr-lcu`) : client de l'API locale du client LoL
+  - découverte et parsing du `lockfile` (mot de passe jamais journalisé) ;
+  - compte actif et parties récentes, testés contre un serveur HTTP local factice.
 
 Le reste est décrit dans [docs/specs/product.md](docs/specs/product.md) et suivi dans le plan de développement.
 
