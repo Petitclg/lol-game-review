@@ -3,7 +3,9 @@
 pub mod clipgen;
 pub mod games;
 pub mod monitor;
+pub mod schedule;
 
 pub use clipgen::{generate_clips, ClipCutter, ClipError, FfmpegCutter};
 pub use games::{merge_games, GameEntry};
 pub use monitor::{ActiveRecording, GameState, Monitor, RecorderFactory, Status};
+pub use schedule::{next_check_delay, UpdateOutcome};

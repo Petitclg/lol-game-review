@@ -54,6 +54,8 @@ cargo test --workspace
 
 Pousser un tag `vX.Y.Z` égal à la version de `src-tauri/tauri.conf.json` déclenche [release.yml](.github/workflows/release.yml) : build, ffmpeg LGPL embarqué, installeur NSIS signé et `latest.json` publiés sur la release. Le dépôt doit contenir les secrets `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
+L'application vérifie la dernière release au démarrage, réessaie en cas d'échec (30 s, 2 min, 10 min) puis re-vérifie toutes les 6 h. Elle n'installe jamais une mise à jour pendant une partie. Le journal est dans `%LOCALAPPDATA%\com.petitclg.lolgamereview\logs\updater.log`.
+
 ## Conventions
 
 - Commits : [Conventional Commits](https://www.conventionalcommits.org/).

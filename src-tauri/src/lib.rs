@@ -66,7 +66,12 @@ pub fn run() {
             app.manage(state);
             build_tray(app.handle())?;
             if !cfg!(debug_assertions) {
-                updater::check_on_startup(app.handle().clone());
+                let log = app
+                    .path()
+                    .app_local_data_dir()?
+                    .join("logs")
+                    .join("updater.log");
+                updater::start(app.handle().clone(), log);
             }
             Ok(())
         })
