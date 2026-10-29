@@ -1,6 +1,7 @@
 import { el, remoteImage, replaceChildren } from "../dom";
 import { championIconUrl, findChampionByKey, type Ddragon } from "../ddragon";
 import { formatDuration, formatKda, formatRelativeDate, queueLabel } from "../format";
+import { hasSource } from "../settings";
 import type { State } from "../state/store";
 import type { GameEntry } from "../types";
 
@@ -20,6 +21,7 @@ export interface GameList {
 export function gameBadge(game: GameEntry): { text: string; kind: string } {
   if (!game.sessionId) return { text: "Pas de vidéo", kind: "none" };
   if (game.clipsReady) return { text: "Clips prêts", kind: "ready" };
+  if (!hasSource(game)) return { text: "Vidéo supprimée", kind: "none" };
   return { text: "Enregistrée", kind: "recorded" };
 }
 

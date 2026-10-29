@@ -26,9 +26,20 @@ Détecter **les ultimates du joueur local** dans la vidéo déjà enregistrée. 
 
 Sur deux enregistrements réels (Qiyana), les lancements détectés sont espacés de 109 à 329 s, cohérents avec le cooldown de l'ultimate, et plusieurs coïncident à ±0,1 s avec un kill de la chronologie. Une image extraite au lancement montre l'icône R avec un cooldown de 95 s.
 
+## Auto-calibration (échelle de l'interface)
+
+La géométrie (pas entre icônes 0,04076, hauteur d'icône 0,0358, rangée à 0,0632 du bas, en unités de hauteur d'écran) a été mesurée à l'échelle d'interface 1,0. Comme la correspondance entre le réglage du jeu et cette échelle n'est pas connue, l'échelle est **calibrée sur chaque enregistrement** :
+
+- une seule passe ffmpeg (`split` / `crop` / `vstack`) extrait la rangée d'icônes pour 11 échelles candidates (0,8 à 2,0) ;
+- pour chaque candidat, un score compte les épisodes de cooldown vus sur Q, W et E (ils se lancent bien plus souvent que l'ultimate) ;
+- on retient le centre du plateau des candidats dont le score atteint 0,7 × le meilleur, à condition d'avoir au moins 5 épisodes et une marge de 2× sur les candidats hors du voisinage ;
+- sinon la partie est marquée **« interface non reconnue »** (`UltimateStatus.state = unrecognized`) : le résultat négatif est mis en cache, l'interface l'affiche, et aucun clip d'ultimate n'est inventé.
+
+Les tests `crates/engine/tests/hud_calibration.rs` utilisent des vidéos synthétiques (traits fins de 2,5 unités) en 1080p, 1440p à l'échelle 1,3, 720p à 1,5, ultrawide 3440×1440 et sans interface. Sur 6 enregistrements réels (2560×1440, sans bordure), la calibration choisit toujours l'échelle 1,0 avec une grande marge, et les lancements trouvés sont identiques à ceux de la version à échelle fixe.
+
 ## Limites
 
 - Précision de ±0,5 s : les images clés tombent chaque seconde, et l'apparition des chiffres est située au milieu de la seconde précédant leur première observation (mesuré : chiffres réellement apparus à 400,2 s, vus à l'échantillon 401, estimation 400,5). La fenêtre du clip (5 s avant, 8 s après) l'absorbe largement.
-- La géométrie a été mesurée avec l'interface par défaut en 16:9 sur l'écran principal : une échelle d'interface personnalisée ou une autre disposition ne trouvera aucun chiffre, et il n'y aura simplement pas d'ultimates.
+- La géométrie suppose la disposition par défaut de l'interface (rangée de sorts centrée en bas) : seule l'échelle varie. Une autre disposition donnera « interface non reconnue ». Le 1080p, l'ultrawide et les autres échelles ne sont validés que sur des vidéos synthétiques.
 - Seuls **vos** ultimates sont détectés (c'est ce qui est visible dans votre interface). Un ultimate qui ne se lance pas (pas de mana, silence) n'affiche pas de cooldown et n'est pas compté.
 - Les mêmes principes permettraient de détecter les lancements de Flash du joueur (icône du sort d'invocateur), non fait à ce stade.

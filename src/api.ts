@@ -1,7 +1,16 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createMockBackend } from "./mock";
-import type { Account, Clip, ClipsProgress, GameEntry, Status } from "./types";
+import type {
+  Account,
+  Clip,
+  ClipsProgress,
+  GameEntry,
+  Settings,
+  Status,
+  StorageUsage,
+  UltimateStatus,
+} from "./types";
 
 export type Unlisten = () => void;
 
@@ -13,6 +22,10 @@ export interface Backend {
   getClips(sessionId: string): Promise<Clip[]>;
   deleteRecording(sessionId: string): Promise<void>;
   getStatus(): Promise<Status>;
+  getSettings(): Promise<Settings>;
+  setSettings(settings: Settings): Promise<Settings>;
+  getStorageUsage(): Promise<StorageUsage>;
+  getUltimateStatus(sessionId: string): Promise<UltimateStatus>;
   onStatusChanged(cb: (status: Status) => void): Promise<Unlisten>;
   onClipsProgress(cb: (progress: ClipsProgress) => void): Promise<Unlisten>;
   /** URL lisible par <video>, ou null si le fichier n'est pas lisible (mode simulé). */
@@ -43,6 +56,10 @@ function createTauriBackend(): Backend {
     getClips: (sessionId) => invoke<Clip[]>("get_clips", { sessionId }),
     deleteRecording: (sessionId) => invoke<void>("delete_recording", { sessionId }),
     getStatus: () => invoke<Status>("get_status"),
+    getSettings: () => invoke<Settings>("get_settings"),
+    setSettings: (settings) => invoke<Settings>("set_settings", { settings }),
+    getStorageUsage: () => invoke<StorageUsage>("get_storage_usage"),
+    getUltimateStatus: (sessionId) => invoke<UltimateStatus>("get_ultimate_status", { sessionId }),
     onStatusChanged: (cb) => listen<Status>("status-changed", (e) => cb(e.payload)),
     onClipsProgress: (cb) => listen<ClipsProgress>("clips-progress", (e) => cb(e.payload)),
     videoSrc: (path) => convertFileSrc(path),

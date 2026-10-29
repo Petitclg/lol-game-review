@@ -9,6 +9,13 @@ import {
   type State,
 } from "../state/store";
 import type { Clip } from "../types";
+import {
+  SOURCE_DELETED_REASON,
+  ULTIMATE_WARNING,
+  canDeleteRecording,
+  canGenerate,
+  shouldShowUltimateWarning,
+} from "../settings";
 import { NO_VIDEO_TOOLTIP } from "./gameList";
 import { renderTabs } from "./tabs";
 import type { ThemeFilter } from "../clips";
@@ -49,7 +56,7 @@ export function generateDisabledReason(state: State): string | null {
   if (!game.sessionId) return NO_VIDEO_TOOLTIP;
   if (state.generating) return "Génération en cours…";
   if (state.status && !state.status.ffmpegAvailable) return "FFmpeg est introuvable.";
-  if (state.deletedSessions.includes(game.sessionId)) return "La vidéo source a été supprimée.";
+  if (!canGenerate(game)) return SOURCE_DELETED_REASON;
   return null;
 }
 
@@ -70,6 +77,11 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   const progressBox = el("div", { class: "progress-box", attrs: { hidden: true } }, [progress, progressText]);
   const toolbar = el("div", { class: "toolbar" }, [generateBtn, deleteBtn, progressBox]);
   const messages = el("div", { class: "messages", attrs: { "aria-live": "polite" } });
+  const ultimateWarn = el("p", {
+    class: "ultimate-warning muted",
+    text: ULTIMATE_WARNING,
+    attrs: { role: "note", hidden: true },
+  });
 
   const tabsEl = el("div", { class: "tabs" });
   const listEl = el("ol", { class: "clip-list", attrs: { "aria-label": "Clips" } });
@@ -113,6 +125,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   const root = el("section", { class: "clips-panel", attrs: { "aria-label": "Clips" } }, [
     toolbar,
     messages,
+    ultimateWarn,
     tabsEl,
     browser,
     placeholder,
@@ -200,6 +213,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
       browser.hidden = !hasClips;
       tabsEl.hidden = !hasClips;
       placeholder.hidden = hasClips;
+      ultimateWarn.hidden = true;
 
       if (!game) {
         stopVideo();
@@ -224,7 +238,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
       generateBtn.disabled = reason !== null;
       if (reason) generateBtn.title = reason;
       else generateBtn.removeAttribute("title");
-      deleteBtn.hidden = state.deletedSessions.includes(game.sessionId);
+      deleteBtn.hidden = !canDeleteRecording(game);
       deleteBtn.disabled = state.generating !== null;
 
       const g = state.generating;
@@ -251,6 +265,9 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
       }
       if (state.notice) msgs.push(el("div", { class: "alert alert-info" }, [state.notice]));
       replaceChildren(messages, msgs);
+      ultimateWarn.hidden = !(
+        state.ultimate?.sessionId === game.sessionId && shouldShowUltimateWarning(state.ultimate.status)
+      );
 
       if (!hasClips) {
         placeholder.textContent = state.clipsLoading

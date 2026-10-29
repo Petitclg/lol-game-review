@@ -1,7 +1,9 @@
 //! Background game monitor thread and the production recorder.
 
 use crate::state::AppState;
-use lgr_engine::{ActiveRecording, Monitor, RecorderFactory, Status};
+use lgr_engine::{
+    run_maintenance, ActiveRecording, FfmpegCompressor, Monitor, RecorderFactory, Status,
+};
 use lgr_live::LiveClient;
 use lgr_media::{detect_encoder, Encoder, Recording};
 use std::path::{Path, PathBuf};
@@ -40,6 +42,66 @@ fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Starts the housekeeping loop (clip compression, retention cap). It only works while
+/// no game is running and stops at once when one starts.
+pub fn spawn_maintenance(state: &AppState) {
+    let store = state.store.clone();
+    let settings = state.settings.clone();
+    let ffmpeg = state.ffmpeg.clone();
+    let status = Arc::clone(&state.status);
+    let stop = Arc::clone(&state.stop);
+
+    thread::spawn(move || {
+        let in_game = || {
+            status
+                .lock()
+                .map_or(true, |s| s.state == lgr_engine::GameState::InGame)
+        };
+        let mut compressor: Option<Option<FfmpegCompressor>> = None;
+        loop {
+            if !sleep_unless_stopped(&stop, MAINTENANCE_INTERVAL) {
+                return;
+            }
+            if in_game() {
+                continue;
+            }
+            let current = settings.load();
+            // Probing the encoders costs a few encodes, so only do it once and only if needed.
+            if current.compress_clips && compressor.is_none() {
+                compressor = Some(ffmpeg.as_ref().and_then(|f| {
+                    lgr_media::detect_compress_encoder(f).map(|encoder| FfmpegCompressor {
+                        ffmpeg: f.clone(),
+                        encoder,
+                    })
+                }));
+            }
+            let active = compressor.as_ref().and_then(Option::as_ref);
+            let idle = || !in_game() && !stop.load(Ordering::Relaxed);
+            let _ = run_maintenance(
+                &store,
+                &current,
+                active.map(|c| c as &dyn lgr_engine::ClipCompressor),
+                &idle,
+            );
+        }
+    });
+}
+
+const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Sleeps in short slices; returns `false` as soon as `stop` is set.
+fn sleep_unless_stopped(stop: &std::sync::atomic::AtomicBool, total: Duration) -> bool {
+    let mut waited = Duration::ZERO;
+    while waited < total {
+        if stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(250));
+        waited += Duration::from_millis(250);
+    }
+    !stop.load(Ordering::Relaxed)
 }
 
 /// Starts the monitor loop; it stops (finalizing any recording) when `state.stop` is set.

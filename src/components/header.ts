@@ -11,19 +11,27 @@ export function statusLabel(status: Status | null): { text: string; kind: "idle"
 
 export interface Header {
   el: HTMLElement;
+  settingsButton: HTMLButtonElement;
   update(state: State): void;
 }
 
-export function createHeader(): Header {
+export function createHeader(handlers: { onOpenSettings?: () => void } = {}): Header {
   const title = el("h1", { class: "app-title", text: "LoL Game Review" });
   const account = el("div", { class: "account" });
   const pill = el("span", { class: "status-pill", attrs: { role: "status" } });
   const warning = el("span", { class: "badge badge-warn", attrs: { hidden: true } });
-  const right = el("div", { class: "header-right" }, [pill, warning, account]);
+  const settingsButton = el("button", {
+    class: "btn btn-small settings-btn",
+    text: "⚙ Stockage",
+    attrs: { type: "button", "aria-haspopup": "dialog", title: "Réglages de stockage" },
+    on: { click: () => handlers.onOpenSettings?.() },
+  });
+  const right = el("div", { class: "header-right" }, [pill, warning, account, settingsButton]);
   const root = el("header", { class: "app-header" }, [title, right]);
 
   return {
     el: root,
+    settingsButton,
     update(state) {
       const { text, kind } = statusLabel(state.status);
       pill.className = `status-pill status-${kind}`;

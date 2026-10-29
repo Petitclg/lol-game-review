@@ -18,6 +18,7 @@ const GAME: GameEntry = {
   win: true,
   sessionId: "s1",
   clipsReady: true,
+  hasRecording: true,
 };
 
 function stateWith(clips: Clip[]): State {

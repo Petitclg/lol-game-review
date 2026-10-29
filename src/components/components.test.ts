@@ -64,10 +64,13 @@ describe("statusLabel / gameBadge", () => {
   it("badges de partie", () => {
     const base = {
       gameId: 1, createdMs: 0, durationSecs: 1, queueId: 420, championId: 1,
-      kills: 0, deaths: 0, assists: 0, win: true,
+      kills: 0, deaths: 0, assists: 0, win: true, hasRecording: true,
     };
     expect(gameBadge({ ...base, sessionId: null, clipsReady: false }).text).toBe("Pas de vidéo");
     expect(gameBadge({ ...base, sessionId: "s", clipsReady: false }).text).toBe("Enregistrée");
     expect(gameBadge({ ...base, sessionId: "s", clipsReady: true }).text).toBe("Clips prêts");
+    // clips prêts mais vidéo source supprimée : le badge reste « Clips prêts »
+    expect(gameBadge({ ...base, sessionId: "s", clipsReady: true, hasRecording: false }).text).toBe("Clips prêts");
+    expect(gameBadge({ ...base, sessionId: "s", clipsReady: false, hasRecording: false }).text).toBe("Vidéo supprimée");
   });
 });

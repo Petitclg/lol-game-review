@@ -2,6 +2,7 @@ import { errorMessage, type Backend } from "./api";
 import { createClipView } from "./components/clipView";
 import { createGameList } from "./components/gameList";
 import { createHeader } from "./components/header";
+import { createSettingsPanel } from "./components/settingsPanel";
 import { createSidePanel } from "./components/sidePanel";
 import { getDdragon, getItemPrices, type Ddragon, type ItemPrices } from "./ddragon";
 import { el, replaceChildren } from "./dom";
@@ -31,7 +32,13 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   let prices: ItemPrices | null = null;
   const unlisteners: Array<() => void> = [];
 
-  const header = createHeader();
+  const header = createHeader({ onOpenSettings: () => settings.open(header.settingsButton) });
+  const settings = createSettingsPanel(backend, {
+    onSaved: () => {
+      // le plafond a pu supprimer des vidéos sources
+      void refreshGames();
+    },
+  });
   const banner = el("div", { class: "banner", attrs: { "aria-live": "polite" } });
   const games = createGameList({
     onSelect: (gameId) => selectGame(gameId),
@@ -52,7 +59,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     el("div", { class: "col-clips" }, [clipView.el]),
     el("div", { class: "col-side" }, [side.el]),
   ]);
-  replaceChildren(root, [header.el, banner, main]);
+  replaceChildren(root, [header.el, banner, main, settings.el]);
   if (backend.isMock) {
     header.el
       .querySelector(".header-right")
@@ -142,8 +149,19 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     try {
       const clips = await backend.getClips(sessionId);
       store.dispatch({ type: "clipsLoaded", sessionId, clips });
+      void loadUltimate(sessionId);
     } catch (err) {
       store.dispatch({ type: "clipsFailed", error: errorMessage(err) });
+    }
+  }
+
+  async function loadUltimate(sessionId: string): Promise<void> {
+    try {
+      const status = await backend.getUltimateStatus(sessionId);
+      store.dispatch({ type: "ultimateLoaded", sessionId, status });
+    } catch {
+      // information secondaire : pas d'avertissement si le statut est indisponible
+      store.dispatch({ type: "ultimateLoaded", sessionId, status: null });
     }
   }
 
@@ -160,6 +178,8 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     try {
       const clips = await backend.generateClips(sessionId);
       store.dispatch({ type: "generateDone", sessionId, clips });
+      // l'état de la vidéo source vient du backend (suppression automatique, plafond…)
+      await Promise.all([refreshGames(), loadUltimate(sessionId), settings.refreshUsage()]);
     } catch (err) {
       store.dispatch({ type: "generateFailed", error: errorMessage(err) });
     }
@@ -168,14 +188,15 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   async function deleteRecording(): Promise<void> {
     const game = selectedGame(store.getState());
     if (!game?.sessionId) return;
+    const sessionId = game.sessionId;
     const ok = window.confirm(
       "Supprimer la vidéo source de cette partie ?\n\nLes clips déjà générés sont conservés, mais vous ne pourrez plus en générer de nouveaux.",
     );
     if (!ok) return;
     try {
-      await backend.deleteRecording(game.sessionId);
-      store.dispatch({ type: "recordingDeleted", sessionId: game.sessionId });
+      await backend.deleteRecording(sessionId);
       store.dispatch({ type: "notice", message: "Vidéo source supprimée. Les clips sont conservés." });
+      await Promise.all([refreshGames(), loadUltimate(sessionId), settings.refreshUsage()]);
     } catch (err) {
       store.dispatch({ type: "notice", message: `Suppression impossible : ${errorMessage(err)}` });
     }
@@ -184,7 +205,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   function onKeyDown(e: KeyboardEvent): void {
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    if (isTypingTarget(e.target)) return;
+    if (isTypingTarget(e.target) || settings.isOpen()) return;
     e.preventDefault();
     store.dispatch({ type: "stepClip", delta: e.key === "ArrowLeft" ? -1 : 1 });
   }
@@ -223,6 +244,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     refresh,
     destroy() {
       document.removeEventListener("keydown", onKeyDown);
+      settings.close();
       for (const u of unlisteners) u();
     },
   };

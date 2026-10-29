@@ -1,4 +1,5 @@
 import type { Backend, Unlisten } from "./api";
+import { DEFAULT_SETTINGS, normalizeSettings } from "./settings";
 import type {
   Account,
   Clip,
@@ -6,8 +7,11 @@ import type {
   GameEntry,
   Involved,
   PlayerSnapshot,
+  Settings,
   Status,
+  StorageUsage,
   Theme,
+  UltimateStatus,
 } from "./types";
 
 const MINUTE = 60_000;
@@ -61,9 +65,10 @@ function rng(seed: number): () => number {
 function buildGames(now: number): GameEntry[] {
   const base = {
     clipsReady: false,
+    hasRecording: true,
     sessionId: null as string | null,
   };
-  return [
+  const list: GameEntry[] = [
     {
       ...base,
       gameId: 7001,
@@ -115,6 +120,9 @@ function buildGames(now: number): GameEntry[] {
       assists: 3,
       win: false,
       sessionId: "mock-session-6998",
+      // clips déjà générés, vidéo source supprimée
+      clipsReady: true,
+      hasRecording: false,
     },
     {
       ...base,
@@ -141,6 +149,8 @@ function buildGames(now: number): GameEntry[] {
       win: true,
     },
   ];
+  // sans session, il n'y a jamais eu de vidéo
+  return list.map((g) => (g.sessionId ? g : { ...g, hasRecording: false }));
 }
 
 const SPELL_KEYS: Record<string, string> = {
@@ -277,10 +287,62 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export function createMockBackend(): Backend {
   const now = Date.now();
   const games = buildGames(now);
+  // sessions dont l'interface du jeu n'est pas reconnue : aucun ultimate généré
+  const unrecognized = new Set(["mock-session-7000"]);
+  const clipsFor = (game: GameEntry): Clip[] => {
+    const clips = buildMockClips(game);
+    return game.sessionId && unrecognized.has(game.sessionId)
+      ? clips.filter((c) => c.theme !== "ultimate")
+      : clips;
+  };
   const generated = new Map<string, Clip[]>();
   for (const g of games) {
-    if (g.sessionId && g.clipsReady) generated.set(g.sessionId, buildMockClips(g));
+    if (g.sessionId && g.clipsReady) generated.set(g.sessionId, clipsFor(g));
   }
+  let settings: Settings = { ...DEFAULT_SETTINGS };
+
+  const MIB = 1024 ** 2;
+  const GIB = 1024 ** 3;
+  function usage(): StorageUsage {
+    let recordingsBytes = 0;
+    let clipsBytes = 0;
+    let count = 0;
+    for (const g of games) {
+      if (!g.sessionId) continue;
+      count += 1;
+      if (g.hasRecording) recordingsBytes += g.durationSecs * 0.9 * MIB;
+      if (g.clipsReady) {
+        clipsBytes += (generated.get(g.sessionId)?.length ?? 0) * (settings.compressClips ? 6 : 18) * MIB;
+      }
+    }
+    return {
+      totalBytes: Math.round(recordingsBytes + clipsBytes),
+      recordingsBytes: Math.round(recordingsBytes),
+      clipsBytes: Math.round(clipsBytes),
+      games: count,
+    };
+  }
+  // plafond de disque : les vidéos des parties les plus anciennes disparaissent en premier
+  function enforceRetention(): void {
+    if (settings.retentionGb === null) return;
+    const cap = settings.retentionGb * GIB;
+    const oldestFirst = games.filter((g) => g.hasRecording).sort((a, b) => a.createdMs - b.createdMs);
+    for (const g of oldestFirst) {
+      if (usage().totalBytes <= cap) break;
+      g.hasRecording = false;
+    }
+  }
+  function ultimateStatus(sessionId: string): UltimateStatus {
+    const game = games.find((g) => g.sessionId === sessionId);
+    const clips = generated.get(sessionId);
+    if (!game || !game.clipsReady || !clips) return { state: "notAnalyzed", casts: 0, hudScale: null };
+    if (unrecognized.has(sessionId)) return { state: "unrecognized", casts: 0, hudScale: null };
+    const casts = clips
+      .filter((c) => c.theme === "ultimate")
+      .reduce((sum, c) => sum + (c.label.includes("×2") ? 2 : 1), 0);
+    return { state: "ok", casts, hudScale: 1 };
+  }
+
   const offline =
     typeof location !== "undefined" && new URLSearchParams(location.search).get("mock") === "offline";
   const noAccount =
@@ -305,7 +367,8 @@ export function createMockBackend(): Backend {
     async generateClips(sessionId) {
       const game = games.find((g) => g.sessionId === sessionId);
       if (!game) throw "Session inconnue.";
-      const clips = buildMockClips(game);
+      if (!game.hasRecording) throw "La vidéo source a été supprimée.";
+      const clips = clipsFor(game);
       const total = clips.length;
       for (let done = 0; done <= total; done++) {
         for (const l of progressListeners) l({ sessionId, done, total });
@@ -313,6 +376,8 @@ export function createMockBackend(): Backend {
       }
       generated.set(sessionId, clips);
       game.clipsReady = true;
+      if (settings.deleteSourceAfterClips) game.hasRecording = false;
+      enforceRetention();
       return clips;
     },
     async getClips(sessionId) {
@@ -321,7 +386,26 @@ export function createMockBackend(): Backend {
     },
     async deleteRecording(sessionId) {
       await delay(200);
-      if (!games.some((g) => g.sessionId === sessionId)) throw "Session inconnue.";
+      const game = games.find((g) => g.sessionId === sessionId);
+      if (!game) throw "Session inconnue.";
+      game.hasRecording = false;
+    },
+    async getSettings() {
+      return { ...settings };
+    },
+    async setSettings(next) {
+      await delay(150);
+      settings = normalizeSettings(next);
+      enforceRetention();
+      return { ...settings };
+    },
+    async getStorageUsage() {
+      await delay(100);
+      return usage();
+    },
+    async getUltimateStatus(sessionId) {
+      await delay(100);
+      return ultimateStatus(sessionId);
     },
     async getStatus() {
       return status;

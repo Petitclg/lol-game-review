@@ -17,6 +17,28 @@ export interface GameEntry {
   win: boolean;
   sessionId: string | null;
   clipsReady: boolean;
+  /** La vidéo source existe encore ; absent traité comme vrai (anciens backends). */
+  hasRecording: boolean;
+}
+
+export interface Settings {
+  deleteSourceAfterClips: boolean;
+  compressClips: boolean;
+  /** Plafond de disque en Go ; null = illimité. */
+  retentionGb: number | null;
+}
+
+export interface StorageUsage {
+  totalBytes: number;
+  recordingsBytes: number;
+  clipsBytes: number;
+  games: number;
+}
+
+export interface UltimateStatus {
+  state: "ok" | "unrecognized" | "notAnalyzed";
+  casts: number;
+  hudScale: number | null;
 }
 
 export interface ItemInfo {

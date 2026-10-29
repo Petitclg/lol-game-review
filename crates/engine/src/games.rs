@@ -18,6 +18,8 @@ pub struct GameEntry {
     pub win: bool,
     pub session_id: Option<String>,
     pub clips_ready: bool,
+    /// The source video still exists, so clips can be (re)generated.
+    pub has_recording: bool,
 }
 
 /// A recording starts when the live API becomes available, i.e. after loading,
@@ -71,6 +73,7 @@ pub fn merge_games(matches: &[MatchSummary], sessions: &[SessionMeta]) -> Vec<Ga
                 win: m.win,
                 session_id: session.map(|s| s.id.clone()),
                 clips_ready: session.is_some_and(|s| s.clips_ready),
+                has_recording: session.is_some_and(|s| s.has_recording),
             }
         })
         .collect()
@@ -133,6 +136,13 @@ mod tests {
     fn clips_only_session_stays_available() {
         let g = merge_games(&[game(1, 10 * MIN)], &[session("a", 11 * MIN, false, true)]);
         assert!(g[0].clips_ready);
+        assert!(!g[0].has_recording, "the source video was deleted");
+    }
+
+    #[test]
+    fn a_session_with_its_video_reports_it() {
+        let g = merge_games(&[game(1, 10 * MIN)], &[session("a", 11 * MIN, true, true)]);
+        assert!(g[0].has_recording && g[0].clips_ready);
     }
 
     #[test]

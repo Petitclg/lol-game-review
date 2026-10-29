@@ -32,7 +32,7 @@ describe("thème « ultimate »", () => {
   it("les données simulées contiennent 3 ultimates dont un fusionné, lanceur seul", () => {
     const game = {
       gameId: 7001, createdMs: 0, durationSecs: 1812, queueId: 420, championId: 103, kills: 9,
-      deaths: 3, assists: 11, win: true, sessionId: "s", clipsReady: false,
+      deaths: 3, assists: 11, win: true, sessionId: "s", clipsReady: false, hasRecording: true,
     };
     const ults = filterClips(buildMockClips(game), "ultimate");
     expect(ults).toHaveLength(3);

@@ -2,8 +2,9 @@
 
 use lgr_core::clips::ClipConfig;
 use lgr_core::session::{build_clips_with, Clip, Session};
-use lgr_core::store::{SessionStore, StoreError};
-use lgr_core::ultimate::detect_casts;
+use lgr_core::store::{SessionStore, StoreError, UltimateRecord};
+use lgr_core::ultimate::detect_ultimates;
+use serde::Serialize;
 use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]
@@ -37,23 +38,41 @@ impl ClipCutter for FfmpegCutter {
     }
 }
 
-/// Finds the local player's ultimate casts in a recording; abstracted for tests.
-pub trait UltimateDetector {
-    /// Video seconds at which an ultimate was cast.
-    fn cast_video_secs(&self, recording: &Path) -> Result<Vec<f64>, String>;
+/// What the HUD analysis found in a recording.
+#[derive(Debug, Clone, PartialEq)]
+pub enum UltimateOutcome {
+    /// The game interface was located; casts are in video seconds.
+    Recognized {
+        casts_video_secs: Vec<f64>,
+        hud_scale: f64,
+    },
+    /// The interface could not be located (unusual scale, layout, or hidden HUD).
+    Unrecognized,
 }
 
-/// Reads the cooldown digits of the ultimate icon in the recorded HUD.
+/// Finds the local player's ultimate casts in a recording; abstracted for tests.
+pub trait UltimateDetector {
+    fn analyse(&self, recording: &Path) -> Result<UltimateOutcome, String>;
+}
+
+/// Reads the cooldown digits of the ability icons in the recorded HUD, after locating
+/// the HUD scale that fits the recording.
 pub struct HudUltimateDetector {
     pub ffmpeg: std::path::PathBuf,
 }
 
 impl UltimateDetector for HudUltimateDetector {
-    fn cast_video_secs(&self, recording: &Path) -> Result<Vec<f64>, String> {
-        let rows =
-            lgr_media::extract_digit_ratios(&self.ffmpeg, recording).map_err(|e| e.to_string())?;
-        let ultimate: Vec<f32> = rows.iter().map(|r| r[lgr_media::ULTIMATE_CELL]).collect();
-        Ok(detect_casts(&ultimate))
+    fn analyse(&self, recording: &Path) -> Result<UltimateOutcome, String> {
+        let scales = lgr_media::SCALES;
+        let rows = lgr_media::extract_digit_ratios(&self.ffmpeg, recording, &scales)
+            .map_err(|e| e.to_string())?;
+        Ok(match detect_ultimates(&rows) {
+            Some(d) => UltimateOutcome::Recognized {
+                casts_video_secs: d.casts_video_secs,
+                hud_scale: scales[d.candidate],
+            },
+            None => UltimateOutcome::Unrecognized,
+        })
     }
 }
 
@@ -61,20 +80,21 @@ impl UltimateDetector for HudUltimateDetector {
 pub struct NoUltimates;
 
 impl UltimateDetector for NoUltimates {
-    fn cast_video_secs(&self, _: &Path) -> Result<Vec<f64>, String> {
-        Ok(Vec::new())
+    fn analyse(&self, _: &Path) -> Result<UltimateOutcome, String> {
+        Err("video analysis is disabled".into())
     }
 }
 
-/// Ultimate casts of a session in game time. The detection result is cached, so the
-/// video is analysed once; a failed detection is not cached and is retried next time.
+/// Ultimate casts of a session in game time. The outcome is cached (including
+/// "interface not recognised"), so the video is analysed once; a failed analysis is
+/// not cached and is retried next time.
 fn ultimate_casts(
     store: &SessionStore,
     detector: &dyn UltimateDetector,
     session: &Session,
 ) -> Vec<f64> {
     if let Ok(Some(cached)) = store.load_ultimates(&session.id) {
-        return cached;
+        return cached.casts;
     }
     let Ok(recording) = store.recording_path(&session.id) else {
         return Vec::new();
@@ -82,17 +102,67 @@ fn ultimate_casts(
     if !recording.is_file() {
         return Vec::new();
     }
-    match detector.cast_video_secs(&recording) {
-        Ok(video_secs) => {
-            let game_secs: Vec<f64> = video_secs
+    let record = match detector.analyse(&recording) {
+        Ok(UltimateOutcome::Recognized {
+            casts_video_secs,
+            hud_scale,
+        }) => UltimateRecord {
+            recognized: true,
+            hud_scale: Some(hud_scale),
+            casts: casts_video_secs
                 .into_iter()
                 .map(|v| v + session.video_anchor_secs)
-                .collect();
-            let _ = store.save_ultimates(&session.id, &game_secs);
-            game_secs
-        }
-        Err(_) => Vec::new(),
-    }
+                .collect(),
+        },
+        Ok(UltimateOutcome::Unrecognized) => UltimateRecord {
+            recognized: false,
+            hud_scale: None,
+            casts: Vec::new(),
+        },
+        Err(_) => return Vec::new(),
+    };
+    let _ = store.save_ultimates(&session.id, &record);
+    record.casts
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UltimateState {
+    Ok,
+    Unrecognized,
+    NotAnalyzed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UltimateStatus {
+    pub state: UltimateState,
+    pub casts: usize,
+    pub hud_scale: Option<f64>,
+}
+
+/// Outcome of the ultimate analysis of a session, for display.
+pub fn ultimate_status(
+    store: &SessionStore,
+    session_id: &str,
+) -> Result<UltimateStatus, ClipError> {
+    Ok(match store.load_ultimates(session_id)? {
+        None => UltimateStatus {
+            state: UltimateState::NotAnalyzed,
+            casts: 0,
+            hud_scale: None,
+        },
+        Some(r) if r.recognized => UltimateStatus {
+            state: UltimateState::Ok,
+            casts: r.casts.len(),
+            hud_scale: r.hud_scale,
+        },
+        Some(_) => UltimateStatus {
+            state: UltimateState::Unrecognized,
+            casts: 0,
+            hud_scale: None,
+        },
+    })
 }
 
 /// Clips of a session with metadata recomputed from the stored timeline, so clips
@@ -105,7 +175,10 @@ pub fn load_clips(store: &SessionStore, session_id: &str) -> Result<Vec<Clip>, C
         return Ok(stored);
     }
     let session = store.load_session(session_id)?;
-    let casts = store.load_ultimates(session_id)?.unwrap_or_default();
+    let casts = store
+        .load_ultimates(session_id)?
+        .map(|r| r.casts)
+        .unwrap_or_default();
     let mut clips = build_clips_with(&session, ClipConfig::default(), &casts);
     for clip in &mut clips {
         clip.file = stored
@@ -339,26 +412,34 @@ mod tests {
     }
 
     struct FakeDetector {
-        video_secs: Vec<f64>,
-        fail: bool,
+        outcome: Result<UltimateOutcome, String>,
         calls: std::cell::Cell<u32>,
     }
 
     impl UltimateDetector for FakeDetector {
-        fn cast_video_secs(&self, _: &Path) -> Result<Vec<f64>, String> {
+        fn analyse(&self, _: &Path) -> Result<UltimateOutcome, String> {
             self.calls.set(self.calls.get() + 1);
-            if self.fail {
-                Err("no ffmpeg".into())
-            } else {
-                Ok(self.video_secs.clone())
-            }
+            self.outcome.clone()
         }
     }
 
     fn detector(video_secs: &[f64], fail: bool) -> FakeDetector {
         FakeDetector {
-            video_secs: video_secs.to_vec(),
-            fail,
+            outcome: if fail {
+                Err("no ffmpeg".into())
+            } else {
+                Ok(UltimateOutcome::Recognized {
+                    casts_video_secs: video_secs.to_vec(),
+                    hud_scale: 1.0,
+                })
+            },
+            calls: std::cell::Cell::new(0),
+        }
+    }
+
+    fn unrecognizing() -> FakeDetector {
+        FakeDetector {
+            outcome: Ok(UltimateOutcome::Unrecognized),
             calls: std::cell::Cell::new(0),
         }
     }
@@ -382,7 +463,48 @@ mod tests {
             "video 200 s + anchor 50 s"
         );
         assert!(ult[0].file.as_ref().is_some_and(|f| Path::new(f).is_file()));
-        assert_eq!(store.load_ultimates("s").unwrap(), Some(vec![250.0]));
+        let rec = store.load_ultimates("s").unwrap().unwrap();
+        assert_eq!((rec.recognized, rec.hud_scale), (true, Some(1.0)));
+        assert_eq!(rec.casts, [250.0]);
+    }
+
+    #[test]
+    fn an_unrecognised_interface_is_cached_reported_and_produces_no_ultimate_clip() {
+        let (_d, store) = setup(true);
+        let det = unrecognizing();
+        let clips = generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert!(clips
+            .iter()
+            .all(|c| c.theme != lgr_core::events::Theme::Ultimate));
+        assert_eq!(clips.len(), 2, "event clips are unaffected");
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert_eq!(det.calls.get(), 1, "the negative result is cached too");
+
+        let status = ultimate_status(&store, "s").unwrap();
+        assert_eq!(status.state, UltimateState::Unrecognized);
+        assert_eq!(status.casts, 0);
+    }
+
+    #[test]
+    fn the_ultimate_status_reflects_the_analysis() {
+        let (_d, store) = setup(true);
+        assert_eq!(
+            ultimate_status(&store, "s").unwrap().state,
+            UltimateState::NotAnalyzed
+        );
+        generate_clips_with(
+            &store,
+            &cutter(false),
+            &detector(&[10.0, 120.0], false),
+            "s",
+            |_, _| {},
+        )
+        .unwrap();
+        let status = ultimate_status(&store, "s").unwrap();
+        assert_eq!(
+            (status.state, status.casts, status.hud_scale),
+            (UltimateState::Ok, 2, Some(1.0))
+        );
     }
 
     #[test]

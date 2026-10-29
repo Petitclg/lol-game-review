@@ -1,6 +1,6 @@
 //! Background screen recording through an ffmpeg child process.
 
-use crate::ffmpeg::{record_args, silent_command, Encoder};
+use crate::ffmpeg::{record_args_for, silent_command, CaptureSource, Encoder};
 use crate::orphans::pid_path;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -10,15 +10,35 @@ use std::time::{Duration, Instant};
 pub struct Recording {
     child: Option<Child>,
     pid_file: PathBuf,
+    source: CaptureSource,
 }
 
 impl Recording {
-    /// Starts recording to `output`. Fails if ffmpeg exits right away (no usable
-    /// capture device, encoder error, ...). The ffmpeg pid is written next to the
-    /// output so that an orphan can be stopped at the next startup.
+    /// Records the game window, falling back to the primary display when the window
+    /// cannot be captured (e.g. not found yet, or capture unsupported).
     pub fn start(ffmpeg: &Path, encoder: Encoder, output: &Path) -> io::Result<Self> {
+        Self::start_from(ffmpeg, CaptureSource::GameWindow, encoder, output)
+            .or_else(|_| Self::start_from(ffmpeg, CaptureSource::Desktop, encoder, output))
+    }
+
+    /// What is actually being recorded.
+    #[must_use]
+    pub fn source(&self) -> CaptureSource {
+        self.source
+    }
+
+    /// Starts recording `source` to `output`. Fails if ffmpeg exits right away (source
+    /// not found, encoder error, ...). The ffmpeg pid is written next to the output so
+    /// that an orphan can be stopped at the next startup.
+    pub fn start_from(
+        ffmpeg: &Path,
+        source: CaptureSource,
+        encoder: Encoder,
+        output: &Path,
+    ) -> io::Result<Self> {
         let mut cmd = silent_command(ffmpeg);
-        cmd.args(record_args(encoder, output)).stdin(Stdio::piped());
+        cmd.args(record_args_for(source, encoder, output))
+            .stdin(Stdio::piped());
         let mut child = cmd.spawn()?;
         let pid_file = pid_path(output);
         let _ = std::fs::write(&pid_file, child.id().to_string());
@@ -30,6 +50,7 @@ impl Recording {
         Ok(Self {
             child: Some(child),
             pid_file,
+            source,
         })
     }
 

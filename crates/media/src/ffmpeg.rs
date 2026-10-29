@@ -46,6 +46,8 @@ impl Encoder {
                 "6M",
                 "-g",
                 "30",
+                "-forced-idr",
+                "1",
             ],
             Self::Amf => vec![
                 "-vf",
@@ -105,8 +107,46 @@ impl Encoder {
     }
 }
 
-const CAPTURE_INPUT: &str = "ddagrab=output_idx=0:framerate=30";
 const BASE_ARGS: [&str; 4] = ["-hide_banner", "-loglevel", "error", "-y"];
+
+/// What gets recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureSource {
+    /// The game window, wherever it is (any monitor, windowed or borderless), through
+    /// Windows Graphics Capture. Only the game's own frame is captured, so the HUD
+    /// position is stable.
+    GameWindow,
+    /// The whole primary display (Desktop Duplication): fallback when the window
+    /// cannot be captured.
+    Desktop,
+}
+
+impl CaptureSource {
+    fn input(self) -> String {
+        match self {
+            Self::GameWindow => format!(
+                "gfxcapture=window_exe='{}':capture_cursor=false:max_framerate=30",
+                game_exe_pattern()
+            ),
+            Self::Desktop => "ddagrab=output_idx=0:framerate=30".to_owned(),
+        }
+    }
+}
+
+const GAME_EXE_PATTERN: &str = "League of Legends";
+
+/// Executable pattern of the window to capture. `LGR_CAPTURE_EXE` overrides it (used by
+/// tests to capture another window); values that could break the filter syntax are ignored.
+fn game_exe_pattern() -> String {
+    std::env::var("LGR_CAPTURE_EXE")
+        .ok()
+        .filter(|v| {
+            !v.is_empty()
+                && v.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-'))
+        })
+        .unwrap_or_else(|| GAME_EXE_PATTERN.to_owned())
+}
 
 /// Safety net: ffmpeg stops by itself after this long, so a recorder orphaned by a
 /// crash can never record indefinitely. No game lasts anywhere near four hours.
@@ -116,9 +156,19 @@ const MAX_RECORDING_SECS: &str = "14400";
 /// (so clips can be cut without re-encoding).
 #[must_use]
 pub fn record_args(encoder: Encoder, output: &Path) -> Vec<OsString> {
+    record_args_for(CaptureSource::Desktop, encoder, output)
+}
+
+/// Arguments recording `source`, video only. A keyframe is forced exactly every second
+/// of video time: clips are cut on keyframes and the ultimate detection reads one
+/// keyframe per second, so this must not drift with the frame rate.
+#[must_use]
+pub fn record_args_for(source: CaptureSource, encoder: Encoder, output: &Path) -> Vec<OsString> {
     let mut a: Vec<OsString> = BASE_ARGS.iter().map(OsString::from).collect();
-    a.extend(["-f", "lavfi", "-i", CAPTURE_INPUT].map(OsString::from));
+    a.extend(["-f", "lavfi", "-i"].map(OsString::from));
+    a.push(source.input().into());
     a.extend(encoder.args().into_iter().map(OsString::from));
+    a.extend(["-force_key_frames", "expr:gte(t,n_forced*1)"].map(OsString::from));
     a.extend(["-t", MAX_RECORDING_SECS, "-an"].map(OsString::from));
     a.push(output.into());
     a
@@ -128,7 +178,8 @@ pub fn record_args(encoder: Encoder, output: &Path) -> Vec<OsString> {
 #[must_use]
 pub fn probe_args(encoder: Encoder) -> Vec<OsString> {
     let mut a: Vec<OsString> = BASE_ARGS.iter().map(OsString::from).collect();
-    a.extend(["-f", "lavfi", "-i", CAPTURE_INPUT].map(OsString::from));
+    a.extend(["-f", "lavfi", "-i"].map(OsString::from));
+    a.push(CaptureSource::Desktop.input().into());
     a.extend(encoder.args().into_iter().map(OsString::from));
     a.extend(["-frames:v", "1", "-f", "null", "-"].map(OsString::from));
     a
@@ -300,6 +351,32 @@ mod tests {
             assert!(a.iter().any(|s| s.contains("scale=-2:720")));
             assert!(a.contains(&codec.to_owned()));
         }
+    }
+
+    #[test]
+    fn keyframes_are_forced_every_second_of_video_time() {
+        for source in [CaptureSource::Desktop, CaptureSource::GameWindow] {
+            let a = strs(&record_args_for(source, Encoder::Nvenc, Path::new("o.mkv")));
+            assert!(a
+                .windows(2)
+                .any(|w| w == ["-force_key_frames", "expr:gte(t,n_forced*1)"]));
+            assert!(a.windows(2).any(|w| w == ["-forced-idr", "1"]));
+        }
+    }
+
+    #[test]
+    fn the_game_window_is_captured_by_executable_not_by_screen() {
+        let window = strs(&record_args_for(
+            CaptureSource::GameWindow,
+            Encoder::Nvenc,
+            Path::new("o.mkv"),
+        ));
+        let input = window.iter().position(|s| s == "-i").unwrap();
+        assert!(window[input + 1].starts_with("gfxcapture=window_exe='League of Legends'"));
+        assert!(window[input + 1].contains("capture_cursor=false"));
+        let desktop = strs(&record_args(Encoder::Nvenc, Path::new("o.mkv")));
+        let input = desktop.iter().position(|s| s == "-i").unwrap();
+        assert!(desktop[input + 1].starts_with("ddagrab="));
     }
 
     #[test]

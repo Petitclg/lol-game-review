@@ -1,5 +1,5 @@
 import { filterClips, type ThemeFilter } from "../clips";
-import type { Account, Clip, GameEntry, Status } from "../types";
+import type { Account, Clip, GameEntry, Status, UltimateStatus } from "../types";
 
 export interface Progress {
   sessionId: string;
@@ -25,7 +25,8 @@ export interface State {
   generateError: string | null;
   theme: ThemeFilter;
   selectedClipId: string | null;
-  deletedSessions: string[];
+  /** Dernier statut d'analyse des ultimates reçu pour la partie sélectionnée. */
+  ultimate: { sessionId: string; status: UltimateStatus } | null;
   notice: string | null;
 }
 
@@ -47,7 +48,7 @@ export type Action =
   | { type: "setTheme"; theme: ThemeFilter }
   | { type: "selectClip"; clipId: string }
   | { type: "stepClip"; delta: number }
-  | { type: "recordingDeleted"; sessionId: string }
+  | { type: "ultimateLoaded"; sessionId: string; status: UltimateStatus | null }
   | { type: "notice"; message: string | null };
 
 export function initialState(): State {
@@ -67,7 +68,7 @@ export function initialState(): State {
     generateError: null,
     theme: "all",
     selectedClipId: null,
-    deletedSessions: [],
+    ultimate: null,
     notice: null,
   };
 }
@@ -118,7 +119,7 @@ export function reducer(state: State, action: Action): State {
         gamesError: null,
         ...(stillThere
           ? {}
-          : { selectedGameId: null, clips: [], selectedClipId: null, clipsError: null }),
+          : { selectedGameId: null, clips: [], selectedClipId: null, clipsError: null, ultimate: null }),
       };
     }
     case "gamesFailed":
@@ -134,6 +135,7 @@ export function reducer(state: State, action: Action): State {
         generateError: null,
         theme: "all",
         selectedClipId: null,
+        ultimate: null,
         notice: null,
       };
     case "clipsLoading":
@@ -180,12 +182,16 @@ export function reducer(state: State, action: Action): State {
       const next = visible[Math.min(visible.length - 1, Math.max(0, idx + action.delta))];
       return next ? { ...state, selectedClipId: next.id } : state;
     }
-    case "recordingDeleted":
-      return state.deletedSessions.includes(action.sessionId)
-        ? state
-        : { ...state, deletedSessions: [...state.deletedSessions, action.sessionId] };
+    case "ultimateLoaded": {
+      const game = selectedGame(state);
+      if (!game || game.sessionId !== action.sessionId) return state;
+      return {
+        ...state,
+        ultimate: action.status ? { sessionId: action.sessionId, status: action.status } : null,
+      };
+    }
     case "notice":
-      return { ...state, notice: action.message };
+      return state.notice === action.message ? state : { ...state, notice: action.message };
   }
 }
 

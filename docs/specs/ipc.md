@@ -19,6 +19,7 @@ interface GameEntry {
   win: boolean;
   sessionId: string | null; // non nul si la partie a été enregistrée par l'application
   clipsReady: boolean;      // les clips ont déjà été générés
+  hasRecording: boolean;    // la vidéo source existe encore (sinon : plus de génération/régénération possible)
 }
 
 interface ItemInfo { id: number; name: string }
@@ -64,6 +65,35 @@ interface Clip {
 | `get_clips` | `{ sessionId: string }` | `Clip[]` (vide si non générés) |
 | `delete_recording` | `{ sessionId: string }` | `void` (supprime la vidéo source, garde les clips) |
 | `get_status` | — | `Status` |
+| `get_settings` | — | `Settings` |
+| `set_settings` | `{ settings: Settings }` | `Settings` (valeurs normalisées) |
+| `get_storage_usage` | — | `StorageUsage` |
+| `get_ultimate_status` | `{ sessionId: string }` | `UltimateStatus` |
+
+```ts
+interface Settings {
+  deleteSourceAfterClips: boolean;  // supprimer la vidéo source une fois les clips générés (défaut : true)
+  compressClips: boolean;           // ré-encoder les clips pour qu'ils prennent moins de place (défaut : true)
+  retentionGb: number | null;       // plafond de disque en Go, les plus anciennes parties sont supprimées en premier ; null = illimité (défaut : 20)
+}
+
+interface StorageUsage {
+  totalBytes: number;               // vidéos sources + clips de toutes les parties
+  recordingsBytes: number;
+  clipsBytes: number;
+  games: number;                    // nombre de parties stockées
+}
+
+/** Résultat de l'analyse des ultimates d'une partie. */
+interface UltimateStatus {
+  state: "ok" | "unrecognized" | "notAnalyzed";
+  casts: number;                    // ultimates détectés (state "ok")
+  hudScale: number | null;          // échelle d'interface retrouvée
+}
+```
+
+`unrecognized` : l'interface du jeu n'a pas pu être localisée dans la vidéo (échelle, résolution ou disposition inhabituelles) ; aucun ultimate n'a été produit.
+`notAnalyzed` : l'analyse n'a pas encore eu lieu pour cette partie (clips non générés, ou vidéo source absente).
 
 ```ts
 interface Status {

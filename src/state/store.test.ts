@@ -24,6 +24,7 @@ function game(gameId: number, sessionId: string | null, clipsReady = false): Gam
     win: true,
     sessionId,
     clipsReady,
+    hasRecording: sessionId !== null,
   };
 }
 
@@ -145,12 +146,40 @@ describe("génération", () => {
   });
 });
 
-describe("suppression et notice", () => {
-  it("recordingDeleted est idempotent", () => {
-    let s = reducer(initialState(), { type: "recordingDeleted", sessionId: "s1" });
-    const again = reducer(s, { type: "recordingDeleted", sessionId: "s1" });
-    expect(again).toBe(s);
-    s = reducer(s, { type: "notice", message: "ok" });
+describe("statut des ultimates", () => {
+  const status = { state: "unrecognized", casts: 0, hudScale: null } as const;
+  it("stocké pour la partie sélectionnée, ignoré pour une autre session", () => {
+    const s = withGameSelected();
+    const loaded = reducer(s, { type: "ultimateLoaded", sessionId: "s1", status });
+    expect(loaded.ultimate).toEqual({ sessionId: "s1", status });
+    expect(reducer(s, { type: "ultimateLoaded", sessionId: "autre", status })).toBe(s);
+  });
+  it("status null efface ; réinitialisé quand on change de partie", () => {
+    let s = reducer(withGameSelected(), { type: "ultimateLoaded", sessionId: "s1", status });
+    expect(reducer(s, { type: "ultimateLoaded", sessionId: "s1", status: null }).ultimate).toBeNull();
+    s = reducer(s, { type: "selectGame", gameId: 2 });
+    expect(s.ultimate).toBeNull();
+  });
+  it("réinitialisé si la partie disparaît de la liste", () => {
+    let s = reducer(withGameSelected(), { type: "ultimateLoaded", sessionId: "s1", status });
+    s = reducer(s, { type: "gamesLoaded", games: [game(9, null)] });
+    expect(s.ultimate).toBeNull();
+  });
+});
+
+describe("hasRecording venant du backend", () => {
+  it("gamesLoaded remplace l'état de la vidéo source, sans mémoire locale", () => {
+    let s = withGameSelected();
+    expect(s.games[0]?.hasRecording).toBe(true);
+    s = reducer(s, { type: "gamesLoaded", games: [{ ...game(1, "s1", true), hasRecording: false }] });
+    expect(s.games[0]?.hasRecording).toBe(false);
+    expect(s.selectedGameId).toBe(1);
+  });
+});
+
+describe("notice", () => {
+  it("notice", () => {
+    const s = reducer(initialState(), { type: "notice", message: "ok" });
     expect(s.notice).toBe("ok");
   });
 });
@@ -162,8 +191,8 @@ describe("createStore", () => {
     const off = store.subscribe(listener);
     store.dispatch({ type: "gamesLoading" });
     expect(listener).toHaveBeenCalledTimes(1);
-    store.dispatch({ type: "recordingDeleted", sessionId: "x" });
-    store.dispatch({ type: "recordingDeleted", sessionId: "x" });
+    store.dispatch({ type: "notice", message: "x" });
+    store.dispatch({ type: "notice", message: "x" });
     expect(listener).toHaveBeenCalledTimes(2);
     off();
     store.dispatch({ type: "notice", message: "m" });

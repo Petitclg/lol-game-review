@@ -5,6 +5,7 @@ mod runtime;
 mod state;
 mod updater;
 
+use lgr_core::settings::SettingsStore;
 use lgr_core::store::SessionStore;
 use state::AppState;
 use std::sync::atomic::Ordering;
@@ -71,7 +72,13 @@ pub fn run() {
                 None => app.path().app_local_data_dir()?,
             };
             let ffmpeg = lgr_media::locate_ffmpeg(&runtime_dirs(app.handle()));
-            let state = AppState::new(SessionStore::new(data_dir.join("sessions")), ffmpeg);
+            let settings = SettingsStore::new(data_dir.join("settings.json"));
+            let state = AppState::new(
+                SessionStore::new(data_dir.join("sessions")),
+                settings,
+                ffmpeg,
+            );
+            runtime::spawn_maintenance(&state);
             if sandbox.is_none() {
                 let handle = runtime::spawn_monitor(app.handle().clone(), &state);
                 *state.monitor_thread.lock().map_err(|e| e.to_string())? = handle;
@@ -107,6 +114,10 @@ pub fn run() {
             commands::generate_clips,
             commands::get_clips,
             commands::delete_recording,
+            commands::get_ultimate_status,
+            commands::get_settings,
+            commands::set_settings,
+            commands::get_storage_usage,
             commands::get_status,
         ])
         .build(tauri::generate_context!())

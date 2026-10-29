@@ -5,7 +5,7 @@ Application de bureau Windows (Tauri) pour revoir les moments forts de ses parti
 ## Fonctionnement
 
 1. L'application reste active dans la zone de notification (fermer la fenêtre ne la quitte pas).
-2. Quand une partie démarre (Live Client Data API), elle enregistre l'écran en arrière-plan : encodeur matériel (NVENC, AMF ou Quick Sync), pas d'audio, aucune fenêtre, priorité réduite.
+2. Quand une partie démarre (Live Client Data API), elle enregistre la fenêtre du jeu en arrière-plan : encodeur matériel (NVENC, AMF ou Quick Sync), pas d'audio, aucune fenêtre, priorité réduite.
 3. À la fin de la partie, la chronologie et l'état des 10 joueurs sont sauvegardés.
 4. Dans l'interface, choisissez une partie récente (client LoL) et générez les clips : découpe sans ré-encodage, silencieuse et rapide.
 5. Parcourez les clips par thème ; le panneau latéral montre les items, KDA et sorts de chaque joueur.
@@ -15,11 +15,12 @@ Seules les parties jouées **pendant que l'application tourne** ont une vidéo (
 
 ## Limites connues
 
-- Les ultimates ne sont détectés que pour **vous**, par analyse de l'interface enregistrée ([ADR 0003](docs/adr/0003-ultimate-detection.md)) : aucune API Riot n'expose les lancements de sorts. Cela suppose l'interface par défaut en 16:9 sur l'écran principal ; les parties déjà générées les obtiennent en cliquant sur « Régénérer les clips ».
+- Les ultimates ne sont détectés que pour **vous**, par analyse de l'interface enregistrée ([ADR 0003](docs/adr/0003-ultimate-detection.md)) : aucune API Riot n'expose les lancements de sorts. L'échelle de l'interface est calibrée automatiquement ; si elle n'est pas reconnue, l'application l'indique au lieu d'inventer des clips.
+- Stockage ([ADR 0004](docs/adr/0004-capture-and-storage-budget.md)) : environ 1 Go par partie enregistrée. Le panneau « Stockage » permet de supprimer la vidéo après les clips, de compresser les clips (environ −45 %, en tâche de fond hors partie) et de fixer un plafond (20 Go par défaut, la plus ancienne partie est supprimée d'abord).
+- La fenêtre du jeu est capturée sur n'importe quel écran (repli sur l'écran principal). Non validé sous Riot Vanguard en partie réelle.
 - Les cooldowns ne sont pas affichés (abandonnés pour cette version) : seuls les items, le niveau, le KDA et les sorts d'invocateur de chaque joueur le sont.
 - L'or total des joueurs n'est pas fourni par Riot (seul votre or non dépensé l'est, pour les parties enregistrées après cette fonctionnalité) : l'analyse d'un clip affiche la valeur des items des joueurs impliqués. Pour le Flash, seul l'équipement est connu, pas sa disponibilité.
 - Il faut lancer l'application avant la partie (pas de démarrage automatique avec Windows pour l'instant).
-- La compatibilité de la capture avec Riot Vanguard doit être validée en conditions réelles.
 
 ## Architecture
 

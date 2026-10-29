@@ -2,9 +2,12 @@
 
 use crate::state::AppState;
 use lgr_core::session::Clip;
+use lgr_core::settings::Settings;
+use lgr_core::store::StorageUsage;
 use lgr_engine::{
-    generate_clips_with as run_generation, load_clips as load_session_clips, merge_games,
-    FfmpegCutter, GameEntry, HudUltimateDetector, Status,
+    finalize_generation, generate_clips_with as run_generation, load_clips as load_session_clips,
+    merge_games, ultimate_status, FfmpegCutter, GameEntry, HudUltimateDetector, Status,
+    UltimateStatus,
 };
 use lgr_lcu::{discover_lockfile_candidates, LcuApi, LcuClient};
 use serde::Serialize;
@@ -76,6 +79,7 @@ pub async fn generate_clips(
     session_id: String,
 ) -> Result<Vec<Clip>, String> {
     let store = state.store.clone();
+    let settings = state.settings.clone();
     let ffmpeg = state.ffmpeg.clone();
     blocking(move || {
         let ffmpeg = ffmpeg.ok_or("ffmpeg est introuvable : impossible de générer les clips.")?;
@@ -84,7 +88,7 @@ pub async fn generate_clips(
         };
         let detector = HudUltimateDetector { ffmpeg };
         let id = session_id.clone();
-        run_generation(&store, &cutter, &detector, &session_id, |done, total| {
+        let clips = run_generation(&store, &cutter, &detector, &session_id, |done, total| {
             let _ = app.emit(
                 "clips-progress",
                 Progress {
@@ -94,9 +98,29 @@ pub async fn generate_clips(
                 },
             );
         })
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        // Reclaims the source video when the user asked for it; a failure here must not
+        // fail a generation that succeeded.
+        let _ = finalize_generation(&store, &settings.load(), &session_id, &clips);
+        Ok(clips)
     })
     .await
+}
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> Settings {
+    state.settings.load()
+}
+
+#[tauri::command]
+pub fn set_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
+    state.settings.save(settings).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_storage_usage(state: State<'_, AppState>) -> Result<StorageUsage, String> {
+    let store = state.store.clone();
+    blocking(move || store.usage().map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
@@ -106,6 +130,15 @@ pub async fn get_clips(
 ) -> Result<Vec<Clip>, String> {
     let store = state.store.clone();
     blocking(move || load_session_clips(&store, &session_id).map_err(|e| e.to_string())).await
+}
+
+#[tauri::command]
+pub async fn get_ultimate_status(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<UltimateStatus, String> {
+    let store = state.store.clone();
+    blocking(move || ultimate_status(&store, &session_id).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
