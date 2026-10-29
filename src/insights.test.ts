@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseItemPrices } from "./ddragon";
 import {
+  ROLE_LABELS,
   formatGold,
   formatItemAdvantage,
   formatLevelAdvantage,
@@ -85,6 +86,27 @@ describe("isFlashEquipped", () => {
     expect(isFlashEquipped({ spells: ["Flash"] })).toBe(true);
     expect(isFlashEquipped({ spells: ["Ignite", "Téléportation"], spellKeys: [] })).toBe(false);
     expect(isFlashEquipped({ spells: [] })).toBe(false);
+  });
+});
+
+describe("rôle caster / ultimate", () => {
+  it("rôle « caster » : libellé et fusion avec les autres rôles", () => {
+    expect(ROLE_LABELS.caster).toBe("Lanceur");
+    const me = player("Moi#1", "ORDER", { isMe: true });
+    const res = involvedPlayers(clipWith([me], [{ name: "Moi#1", roles: ["caster"] }]));
+    expect(res[0]?.roles).toEqual(["caster"]);
+    const merged = involvedPlayers(clipWith([me], [{ name: "Moi#1", roles: ["caster", "killer"] }]));
+    expect(merged[0]?.roles).toEqual(["killer", "caster"]);
+  });
+  it("ultimate : moi seul → résumé sans aucune comparaison", () => {
+    const me = player("Moi#1", "ORDER", { isMe: true });
+    const res = involvedPlayers(clipWith([me], [{ name: "Moi#1", roles: ["caster"] }]));
+    expect(summarize(res, PRICES)).toEqual({
+      levelAdvantage: null,
+      itemAdvantage: null,
+      itemTotals: null,
+      flash: null,
+    });
   });
 });
 

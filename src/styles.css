@@ -12,6 +12,7 @@
   --loss: #ef5b6b;
   --warn: #f2b134;
   --danger: #d9435a;
+  --ultimate: #ff7a2f;
   --radius: 8px;
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
@@ -446,6 +447,15 @@ button:disabled {
   color: #fff;
 }
 
+.tab[data-theme="ultimate"] {
+  border-color: var(--ultimate);
+}
+
+.tab[data-theme="ultimate"].active {
+  background: var(--ultimate);
+  color: #1a0d00;
+}
+
 .tab-count {
   font-size: 0.72rem;
   padding: 0 0.4rem;
@@ -552,6 +562,9 @@ button:disabled {
 }
 .clip-item.theme-turret {
   border-left-color: #b07cff;
+}
+.clip-item.theme-ultimate {
+  border-left-color: var(--ultimate);
 }
 
 .clip-item.selected {
@@ -815,6 +828,11 @@ button:disabled {
 .role-assist {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.role-caster {
+  color: var(--ultimate);
+  border-color: var(--ultimate);
 }
 
 .involved-level,

@@ -29,7 +29,7 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 ## Contraintes techniques connues
 
 1. **Source vidéo.** Les parties passées ne sont pas filmées. Les clips viennent d'un enregistrement léger fait pendant la partie ; les parties jouées avant l'installation n'ont que le résumé (voir [ADR 0001](../adr/0001-recording-during-game.md)).
-2. **Ultimates (F4).** La Live Client Data API n'expose pas les lancements de sorts. Détecter les ultimates exige une autre source, à investiguer (spike). Le thème est reporté tant qu'aucune source fiable n'est validée.
+2. **Ultimates (F4).** Aucune API Riot n'expose les lancements de sorts. Les ultimates du joueur local sont détectés dans la vidéo enregistrée (chiffres de cooldown de l'icône), voir [ADR 0003](../adr/0003-ultimate-detection.md). Ceux des autres joueurs ne le sont pas (et la politique Riot interdit de suivre les cooldowns d'ultimates ennemis).
 3. **Cooldowns (F6).** Retirés : la Live Client API ne donne ni lancements de sorts ni cooldowns restants, seule une estimation était possible.
 4. **Anti-cheat Vanguard.** Validé sur une partie réelle (v0.1) : la capture `ddagrab` + NVENC fonctionne en jeu, à environ 5 Mbit/s en 1440p30, priorité *BelowNormal*, charge CPU négligeable. À confirmer sur d'autres configurations (AMD, Intel, plein écran exclusif).
 5. **Clé API Riot.** Non requise au MVP. Match-V5 est un fournisseur optionnel ultérieur.
@@ -45,4 +45,5 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 | Extraction des clips, synchronisation vidéo / jeu | fait, précision < 1 s mesurée |
 | Interface Tauri, zone de notification | fait |
 | CI/CD, release signée, mise à jour automatique | fait (première release à publier) |
-| Ultimates (F4), démarrage avec Windows | à faire |
+| Ultimates du joueur (F4), par analyse vidéo | fait, validé sur 2 enregistrements |
+| Flash du joueur, démarrage avec Windows | à faire |

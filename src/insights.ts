@@ -12,12 +12,13 @@ export interface InvolvedPlayer {
   isAlly: boolean;
 }
 
-const ROLE_ORDER: readonly Role[] = ["killer", "victim", "assist"];
+const ROLE_ORDER: readonly Role[] = ["killer", "victim", "assist", "caster"];
 
 export const ROLE_LABELS: Record<Role, string> = {
   killer: "Tueur",
   victim: "Victime",
   assist: "Assist",
+  caster: "Lanceur",
 };
 
 export const FLASH_NOTE =
@@ -35,7 +36,7 @@ export function myTeam(clip: Pick<Clip, "players">): Team | null {
 }
 
 function isRole(value: unknown): value is Role {
-  return value === "killer" || value === "victim" || value === "assist";
+  return (ROLE_ORDER as readonly unknown[]).includes(value);
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { Backend } from "../api";
-import { countByTheme } from "../clips";
+import { countByTheme, isTheme } from "../clips";
 import { el, replaceChildren } from "../dom";
 import { formatDuration } from "../format";
 import {
@@ -17,6 +17,7 @@ export const THEME_NAMES: Record<Clip["theme"], string> = {
   kill: "Kill",
   death: "Mort",
   assist: "Assist",
+  ultimate: "Ultimate",
   objective: "Objectif",
   turret: "Tour",
 };
@@ -284,14 +285,14 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
               el(
                 "button",
                 {
-                  class: `clip-item theme-${clip.theme}${selected ? " selected" : ""}`,
+                  class: `clip-item${isTheme(clip.theme) ? ` theme-${clip.theme}` : ""}${selected ? " selected" : ""}`,
                   attrs: { type: "button", "aria-current": selected ? "true" : undefined },
                   on: { click: () => h.onSelectClip(clip.id) },
                 },
                 [
                   el("span", { class: "clip-time", text: formatDuration(clip.gameTimeSecs) }),
                   el("span", { class: "clip-label", text: clip.label }),
-                  el("span", { class: "clip-theme", text: THEME_NAMES[clip.theme] }),
+                  el("span", { class: "clip-theme", text: THEME_NAMES[clip.theme] ?? String(clip.theme) }),
                 ],
               ),
             ]);

@@ -62,6 +62,7 @@ mod tests {
             killer: None,
             victim: None,
             assisters: Vec::new(),
+            caster: None,
         }
     }
 

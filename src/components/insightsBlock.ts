@@ -46,7 +46,8 @@ function summaryBadges(summary: Summary, hasPrices: boolean): HTMLElement[] {
         totals ? `Total alliés : ${formatGold(totals.ally)} · Total ennemis : ${formatGold(totals.enemy)}` : undefined,
       ),
     );
-  } else if (!hasPrices) {
+  } else if (!hasPrices && summary.levelAdvantage !== null) {
+    // « — » seulement s'il y a bien un adversaire à comparer
     out.push(badge("Avance d'items", "—", "neutral", "Prix des items indisponibles (Data Dragon hors ligne)."));
   }
   if (summary.flash !== null) {

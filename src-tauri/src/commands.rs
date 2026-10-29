@@ -3,8 +3,8 @@
 use crate::state::AppState;
 use lgr_core::session::Clip;
 use lgr_engine::{
-    generate_clips as run_generation, load_clips as load_session_clips, merge_games, FfmpegCutter,
-    GameEntry, Status,
+    generate_clips_with as run_generation, load_clips as load_session_clips, merge_games,
+    FfmpegCutter, GameEntry, HudUltimateDetector, Status,
 };
 use lgr_lcu::{discover_lockfile_candidates, LcuApi, LcuClient};
 use serde::Serialize;
@@ -78,11 +78,13 @@ pub async fn generate_clips(
     let store = state.store.clone();
     let ffmpeg = state.ffmpeg.clone();
     blocking(move || {
+        let ffmpeg = ffmpeg.ok_or("ffmpeg est introuvable : impossible de générer les clips.")?;
         let cutter = FfmpegCutter {
-            ffmpeg: ffmpeg.ok_or("ffmpeg est introuvable : impossible de générer les clips.")?,
+            ffmpeg: ffmpeg.clone(),
         };
+        let detector = HudUltimateDetector { ffmpeg };
         let id = session_id.clone();
-        run_generation(&store, &cutter, &session_id, |done, total| {
+        run_generation(&store, &cutter, &detector, &session_id, |done, total| {
             let _ = app.emit(
                 "clips-progress",
                 Progress {

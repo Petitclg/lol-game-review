@@ -5,7 +5,7 @@ Toutes les structures sont sérialisées en JSON, champs en `camelCase`. Les com
 ## Types
 
 ```ts
-type Theme = "kill" | "death" | "assist" | "objective" | "turret";
+type Theme = "kill" | "death" | "assist" | "objective" | "turret" | "ultimate";
 
 interface Account { riotId: string; level: number }
 
@@ -35,7 +35,7 @@ interface PlayerSnapshot {
   spellKeys: string[];      // identifiants stables, ex. "SummonerFlash" ; [] pour les anciennes parties
 }
 
-type Role = "killer" | "victim" | "assist";
+type Role = "killer" | "victim" | "assist" | "caster";   // caster : lanceur d'un ultimate (le joueur local)
 
 /** Joueur impliqué dans le moment du clip. `name` est égal à `PlayerSnapshot.name`. */
 interface Involved { name: string; roles: Role[] }

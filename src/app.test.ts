@@ -47,7 +47,7 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(gen?.disabled).toBe(false);
     gen?.click();
     await until(() => root.querySelectorAll(".clip-item").length > 0, 8000);
-    expect(root.querySelectorAll('[role="tab"]').length).toBe(6);
+    expect(root.querySelectorAll('[role="tab"]').length).toBe(7);
 
     const total = root.querySelectorAll(".clip-item").length;
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));

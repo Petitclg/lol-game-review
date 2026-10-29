@@ -2,14 +2,22 @@ import type { Clip, Theme } from "./types";
 
 export type ThemeFilter = Theme | "all";
 
+export const THEMES: readonly Theme[] = ["kill", "death", "assist", "ultimate", "objective", "turret"];
+
 export const THEME_TABS: ReadonlyArray<{ id: ThemeFilter; label: string }> = [
   { id: "all", label: "Tous" },
   { id: "kill", label: "Kills" },
   { id: "death", label: "Morts" },
   { id: "assist", label: "Assists" },
+  { id: "ultimate", label: "Ultimates" },
   { id: "objective", label: "Objectifs" },
   { id: "turret", label: "Tours" },
 ];
+
+/** Garde de type : un thème inconnu (backend plus récent) est ignoré plutôt que de planter. */
+export function isTheme(value: unknown): value is Theme {
+  return typeof value === "string" && (THEMES as readonly string[]).includes(value);
+}
 
 export function sortClips(clips: readonly Clip[]): Clip[] {
   return [...clips].sort((a, b) => a.gameTimeSecs - b.gameTimeSecs || a.id.localeCompare(b.id));
@@ -26,10 +34,11 @@ export function countByTheme(clips: readonly Clip[]): Record<ThemeFilter, number
     kill: 0,
     death: 0,
     assist: 0,
+    ultimate: 0,
     objective: 0,
     turret: 0,
   };
-  for (const clip of clips) counts[clip.theme] += 1;
+  for (const clip of clips) if (isTheme(clip.theme)) counts[clip.theme] += 1;
   return counts;
 }
 
@@ -38,9 +47,10 @@ export function groupByTheme(clips: readonly Clip[]): Record<Theme, Clip[]> {
     kill: [],
     death: [],
     assist: [],
+    ultimate: [],
     objective: [],
     turret: [],
   };
-  for (const clip of sortClips(clips)) groups[clip.theme].push(clip);
+  for (const clip of sortClips(clips)) if (isTheme(clip.theme)) groups[clip.theme].push(clip);
   return groups;
 }

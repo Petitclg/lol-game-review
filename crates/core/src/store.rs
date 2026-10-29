@@ -117,6 +117,26 @@ impl SessionStore {
         }
     }
 
+    /// Game times (secs) of the local player's ultimates, or `None` when detection
+    /// has not run yet for this session.
+    pub fn load_ultimates(&self, id: &str) -> Result<Option<Vec<f64>>, StoreError> {
+        let path = self.session_dir(id)?.join("ultimates.json");
+        match fs::read(path) {
+            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn save_ultimates(&self, id: &str, cast_game_secs: &[f64]) -> Result<(), StoreError> {
+        let dir = self.prepare(id)?;
+        write_atomic(
+            &dir.join("ultimates.json"),
+            &serde_json::to_vec(cast_game_secs)?,
+        )?;
+        Ok(())
+    }
+
     /// Deletes the whole session directory (used for discarded sessions).
     pub fn delete_session(&self, id: &str) -> Result<(), StoreError> {
         let dir = self.session_dir(id)?;
@@ -245,6 +265,17 @@ mod tests {
         fs::create_dir_all(dir.path().join("bad")).unwrap();
         fs::write(dir.path().join("bad").join("session.json"), b"{").unwrap();
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ultimates_are_none_until_detected_then_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        assert_eq!(store.load_ultimates("a").unwrap(), None);
+        store.save_ultimates("a", &[482.5, 603.0]).unwrap();
+        assert_eq!(store.load_ultimates("a").unwrap(), Some(vec![482.5, 603.0]));
+        store.save_ultimates("a", &[]).unwrap();
+        assert_eq!(store.load_ultimates("a").unwrap(), Some(vec![]));
     }
 
     #[test]

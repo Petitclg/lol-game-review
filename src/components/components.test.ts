@@ -17,6 +17,7 @@ describe("renderTabs", () => {
       "Kills2",
       "Morts1",
       "Assists1",
+      "Ultimates0",
       "Objectifs1",
       "Tours1",
     ]);

@@ -45,6 +45,8 @@ pub enum Theme {
     Assist,
     Objective,
     Turret,
+    /// The local player's own ultimates, detected from the recorded HUD.
+    Ultimate,
 }
 
 /// A highlight in which the tracked player is involved.
@@ -61,6 +63,9 @@ pub struct Highlight {
     pub victim: Option<String>,
     #[serde(default)]
     pub assisters: Vec<String>,
+    /// Player casting the ability (ultimate highlights only).
+    #[serde(default)]
+    pub caster: Option<String>,
 }
 
 /// Returns the highlights of the player among `events`, sorted by time.
@@ -111,6 +116,7 @@ fn classify_one<S: AsRef<str>>(e: &RawLiveEvent, aliases: &[S]) -> Option<Highli
         killer: e.killer_name.clone(),
         victim: e.victim_name.clone(),
         assisters: e.assisters.clone(),
+        caster: None,
     })
 }
 

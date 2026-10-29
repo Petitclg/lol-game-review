@@ -153,7 +153,7 @@ const SPELL_KEYS: Record<string, string> = {
   Exhaust: "SummonerExhaust",
 };
 
-/** Joueurs impliqués : 1v1 (kill, mort), 2v1 (assist), alliés seuls (objectif, tour). */
+/** Joueurs impliqués : 1v1 (kill, mort), 2v1 (assist), moi seul (ultimate), alliés seuls (objectif, tour). */
 function mockInvolved(theme: Theme, n: number, players: PlayerSnapshot[]): Involved[] {
   const name = (i: number) => players[i]?.name ?? "";
   const enemy = 5 + (n % 5);
@@ -174,6 +174,8 @@ function mockInvolved(theme: Theme, n: number, players: PlayerSnapshot[]): Invol
         { name: name(0), roles: ["assist"] },
         { name: name(enemy), roles: ["victim"] },
       ];
+    case "ultimate":
+      return [{ name: name(0), roles: ["caster"] }];
     default:
       return [
         { name: name(0), roles: ["killer"] },
@@ -220,17 +222,20 @@ const LABELS: Record<Theme, string[]> = {
   kill: ["Kill", "Double kill", "Triple kill"],
   death: ["Mort"],
   assist: ["Assist"],
+  ultimate: ["Ultimate"],
   objective: ["Dragon", "Baron Nashor", "Héraut"],
   turret: ["Tour", "Inhibiteur"],
 };
 
 export function buildMockClips(game: GameEntry): Clip[] {
   const rand = rng(game.gameId);
-  const themes: Theme[] = ["kill", "death", "assist", "objective", "turret"];
+  // « ultimate » en dernier pour ne pas modifier la séquence pseudo-aléatoire des autres clips
+  const themes: Theme[] = ["kill", "death", "assist", "objective", "turret", "ultimate"];
   const counts: Record<Theme, number> = {
     kill: Math.max(1, Math.min(6, game.kills)),
     death: Math.max(1, Math.min(5, game.deaths)),
     assist: Math.max(1, Math.min(6, Math.round(game.assists / 2))),
+    ultimate: 3,
     objective: 3,
     turret: 2,
   };
@@ -240,7 +245,11 @@ export function buildMockClips(game: GameEntry): Clip[] {
       const t = Math.round(120 + rand() * (game.durationSecs - 180));
       const progress = t / game.durationSecs;
       const labels = LABELS[theme];
-      const label = labels[Math.floor(rand() * labels.length)] ?? "Évènement";
+      // un ultimate fusionné (deux lancers rapprochés)
+      const label =
+        theme === "ultimate" && n === 1
+          ? "Ultimate ×2"
+          : (labels[Math.floor(rand() * labels.length)] ?? "Évènement");
       const players = buildPlayers(game, rand, progress);
       const myGold = Math.round(100 + rand() * 1400);
       // le premier clip « objectif » imite une partie enregistrée avant l'analyse

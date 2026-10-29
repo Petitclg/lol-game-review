@@ -81,6 +81,8 @@ pub enum Role {
     Killer,
     Victim,
     Assist,
+    /// Caster of an ultimate.
+    Caster,
 }
 
 /// A player involved in a highlight; `name` equals `PlayerSnapshot::name`.
@@ -118,6 +120,9 @@ pub fn involved_players(highlights: &[Highlight], players: &[PlayerSnapshot]) ->
         }
     };
     for h in highlights {
+        if let Some(c) = &h.caster {
+            add(c, Role::Caster);
+        }
         if let Some(k) = &h.killer {
             add(k, Role::Killer);
         }
@@ -166,6 +171,7 @@ fn theme_key(theme: Theme) -> &'static str {
         Theme::Assist => "assist",
         Theme::Objective => "objective",
         Theme::Turret => "turret",
+        Theme::Ultimate => "ultimate",
     }
 }
 
@@ -177,26 +183,70 @@ fn group_label(highlights: &[Highlight]) -> String {
     }
 }
 
+/// An ultimate is detected about a second after it is cast and its effect lasts
+/// longer than a kill, so the window starts later and ends later.
+const ULTIMATE_CONFIG: ClipConfig = ClipConfig {
+    pre_roll_secs: 5.0,
+    post_roll_secs: 8.0,
+};
+
+/// Highlights for the local player's ultimates cast at the given game times.
+fn ultimate_highlights(session: &Session, cast_game_secs: &[f64]) -> Vec<Highlight> {
+    cast_game_secs
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| Highlight {
+            event_id: u32::try_from(i).unwrap_or(u32::MAX),
+            time_secs: t,
+            theme: Theme::Ultimate,
+            label: "Ultimate".to_owned(),
+            killer: None,
+            victim: None,
+            assisters: Vec::new(),
+            caster: session.player_aliases.first().cloned(),
+        })
+        .collect()
+}
+
 /// Builds the clips of a session, grouped by theme; within a theme, highlights whose
 /// windows overlap (e.g. a multikill) share a single clip. File paths are left empty.
 #[must_use]
 pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
-    let highlights = classify(&session.events, &session.player_aliases);
+    build_clips_with(session, cfg, &[])
+}
+
+/// Like [`build_clips`], also producing ultimate clips for casts detected at
+/// `ultimate_game_secs` (game time, seconds).
+#[must_use]
+pub fn build_clips_with(
+    session: &Session,
+    cfg: ClipConfig,
+    ultimate_game_secs: &[f64],
+) -> Vec<Clip> {
+    let mut highlights = classify(&session.events, &session.player_aliases);
+    highlights.extend(ultimate_highlights(session, ultimate_game_secs));
     let themes = [
         Theme::Kill,
         Theme::Death,
         Theme::Assist,
         Theme::Objective,
         Theme::Turret,
+        Theme::Ultimate,
     ];
     let mut clips = Vec::new();
     for theme in themes {
-        let of_theme: Vec<Highlight> = highlights
+        let mut of_theme: Vec<Highlight> = highlights
             .iter()
             .filter(|h| h.theme == theme)
             .cloned()
             .collect();
-        for (i, w) in build_windows(&of_theme, cfg).into_iter().enumerate() {
+        of_theme.sort_by(|a, b| a.time_secs.total_cmp(&b.time_secs));
+        let theme_cfg = if theme == Theme::Ultimate {
+            ULTIMATE_CONFIG
+        } else {
+            cfg
+        };
+        for (i, w) in build_windows(&of_theme, theme_cfg).into_iter().enumerate() {
             // The recording may have started mid-game: nothing to show before it.
             if w.end_secs - session.video_anchor_secs <= MIN_VISIBLE_SECS {
                 continue;
@@ -332,6 +382,41 @@ mod tests {
             ]
         );
         assert_eq!(c.my_gold, Some(500.0));
+    }
+
+    #[test]
+    fn ultimate_clips_are_built_from_cast_times_with_their_own_window() {
+        let s = session(vec![], 0.0);
+        let clips = build_clips_with(&s, ClipConfig::default(), &[200.0, 205.0, 400.0]);
+        assert_eq!(clips.len(), 2);
+        assert!(clips.iter().all(|c| c.theme == Theme::Ultimate));
+        assert_eq!(clips[0].label, "Ultimate ×2");
+        assert!((clips[0].start_secs - 195.0).abs() < 1e-9);
+        assert!((clips[0].end_secs - 213.0).abs() < 1e-9);
+        assert_eq!(clips[1].id, "ultimate-1");
+        assert_eq!(
+            clips[0].involved,
+            [Involved {
+                name: "Me#EUW".into(),
+                roles: vec![Role::Caster]
+            }]
+        );
+    }
+
+    #[test]
+    fn ultimates_cast_before_recording_started_are_dropped() {
+        let s = session(vec![], 100.0);
+        let clips = build_clips_with(&s, ClipConfig::default(), &[50.0, 300.0]);
+        assert_eq!(clips.len(), 1);
+        assert!((clips[0].game_time_secs - 300.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ultimate_clips_interleave_with_event_clips_by_time() {
+        let s = session(vec![ev(1, "ChampionKill", 150.0, "Me", "Foe")], 0.0);
+        let clips = build_clips_with(&s, ClipConfig::default(), &[100.0, 300.0]);
+        let themes: Vec<_> = clips.iter().map(|c| c.theme).collect();
+        assert_eq!(themes, [Theme::Ultimate, Theme::Kill, Theme::Ultimate]);
     }
 
     #[test]

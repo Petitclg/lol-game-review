@@ -1,4 +1,4 @@
-export type Theme = "kill" | "death" | "assist" | "objective" | "turret";
+export type Theme = "kill" | "death" | "assist" | "ultimate" | "objective" | "turret";
 
 export interface Account {
   riotId: string;
@@ -39,7 +39,7 @@ export interface PlayerSnapshot {
   spellKeys?: string[];
 }
 
-export type Role = "killer" | "victim" | "assist";
+export type Role = "killer" | "victim" | "assist" | "caster";
 
 export interface Involved {
   name: string;

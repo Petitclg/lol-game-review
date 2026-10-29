@@ -130,6 +130,24 @@ describe("bloc « Analyse du moment »", () => {
     );
   });
 
+  it("ultimate (lanceur seul) : ligne du joueur, aucun badge d'avantage, pas de message d'indisponibilité", () => {
+    const ult = makeClip("u", "ultimate", 300, {
+      players,
+      myGold: 800,
+      involved: [{ name: "Moi", roles: ["caster"] }],
+    });
+    for (const prices of [PRICES, null]) {
+      const block = renderInsights(ult, null, prices);
+      expect(block.querySelectorAll("tbody tr")).toHaveLength(1);
+      expect(block.querySelector("tr.me .role-caster")?.textContent).toBe("Lanceur");
+      expect(block.querySelector(".insight-list")).toBeNull();
+      expect(block.querySelector(".insight")).toBeNull();
+      expect(block.querySelector(".insights-unavailable")).toBeNull();
+      expect(block.textContent).not.toContain("Analyse indisponible");
+      expect(block.querySelector(".insights-note")?.textContent).toContain("L'or total des joueurs");
+    }
+  });
+
   it("alliés seuls : pas de comparaison, pas de crash", () => {
     const solo = makeClip("c", "turret", 300, {
       players,

@@ -15,7 +15,7 @@ Seules les parties jouées **pendant que l'application tourne** ont une vidéo (
 
 ## Limites connues
 
-- Les ultimates ne sont pas détectables : la Live Client API n'expose pas les lancements de sorts.
+- Les ultimates ne sont détectés que pour **vous**, par analyse de l'interface enregistrée ([ADR 0003](docs/adr/0003-ultimate-detection.md)) : aucune API Riot n'expose les lancements de sorts. Cela suppose l'interface par défaut en 16:9 sur l'écran principal ; les parties déjà générées les obtiennent en cliquant sur « Régénérer les clips ».
 - Les cooldowns ne sont pas affichés (abandonnés pour cette version) : seuls les items, le niveau, le KDA et les sorts d'invocateur de chaque joueur le sont.
 - L'or total des joueurs n'est pas fourni par Riot (seul votre or non dépensé l'est, pour les parties enregistrées après cette fonctionnalité) : l'analyse d'un clip affiche la valeur des items des joueurs impliqués. Pour le Flash, seul l'équipement est connu, pas sa disponibilité.
 - Il faut lancer l'application avant la partie (pas de démarrage automatique avec Windows pour l'instant).
