@@ -51,27 +51,46 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+    let sandbox = lgr_engine::sandbox::current_sandbox();
+    let mut builder = tauri::Builder::default();
+    if let Some(dir) = &sandbox {
+        // Isolates the WebView from the installed app's, so debugging flags apply and
+        // no state is shared.
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", dir.join("webview"));
+    } else {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_main_window(app);
-        }))
+        }));
+    }
+    let app = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(|app| {
-            let root = app.path().app_local_data_dir()?.join("sessions");
+        .setup(move |app| {
+            let data_dir = match &sandbox {
+                Some(dir) => dir.clone(),
+                None => app.path().app_local_data_dir()?,
+            };
             let ffmpeg = lgr_media::locate_ffmpeg(&runtime_dirs(app.handle()));
-            let state = AppState::new(SessionStore::new(root), ffmpeg);
-            let handle = runtime::spawn_monitor(app.handle().clone(), &state);
-            *state.monitor_thread.lock().map_err(|e| e.to_string())? = handle;
+            let state = AppState::new(SessionStore::new(data_dir.join("sessions")), ffmpeg);
+            if sandbox.is_none() {
+                let handle = runtime::spawn_monitor(app.handle().clone(), &state);
+                *state.monitor_thread.lock().map_err(|e| e.to_string())? = handle;
+            } else {
+                // The configured asset scope only covers the real data folder.
+                let sessions = data_dir.join("sessions");
+                let _ = std::fs::create_dir_all(&sessions);
+                let _ = app.asset_protocol_scope().allow_directory(&sessions, true);
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_title("LoL Game Review (BAC À SABLE : aucun enregistrement)");
+                }
+            }
             app.manage(state);
             build_tray(app.handle())?;
-            if !cfg!(debug_assertions) {
-                let log = app
-                    .path()
-                    .app_local_data_dir()?
-                    .join("logs")
-                    .join("updater.log");
-                updater::start(app.handle().clone(), log);
+            if !cfg!(debug_assertions) && sandbox.is_none() {
+                updater::start(
+                    app.handle().clone(),
+                    data_dir.join("logs").join("updater.log"),
+                );
             }
             Ok(())
         })

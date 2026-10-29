@@ -51,6 +51,16 @@ cargo test --workspace
 
 `LGR_REQUIRE_FFMPEG=1` fait échouer (au lieu d'ignorer) les tests qui ont besoin de ffmpeg.
 
+### Tester sans toucher à une installation réelle
+
+`LGR_SANDBOX=1` (ou `LGR_SANDBOX=<dossier>`) lance une instance isolée : dossier de données et WebView séparés, aucun enregistrement, aucune mise à jour, pas de verrou d'instance unique. Elle peut donc tourner à côté de l'application installée et pendant une partie sans jamais l'enregistrer.
+
+```powershell
+$env:LGR_SANDBOX = "1"; .\target\release\lol-game-review.exe
+```
+
+La logique métier est testée en CI sur des données synthétiques ; seul ce qui exige une vraie partie (client LoL, Live API, capture sous l'anti-cheat) ne peut pas l'être hors d'un poste de jeu.
+
 ## Release et mise à jour
 
 Pousser un tag `vX.Y.Z` égal à la version de `src-tauri/tauri.conf.json` déclenche [release.yml](.github/workflows/release.yml) : build, ffmpeg LGPL embarqué, installeur NSIS signé et `latest.json` publiés sur la release. Le dépôt doit contenir les secrets `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.

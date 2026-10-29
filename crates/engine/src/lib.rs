@@ -3,6 +3,7 @@
 pub mod clipgen;
 pub mod games;
 pub mod monitor;
+pub mod sandbox;
 pub mod schedule;
 
 pub use clipgen::{
