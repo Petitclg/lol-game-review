@@ -20,7 +20,7 @@ Détecter **les ultimates du joueur local** dans la vidéo déjà enregistrée. 
 - **Extraction** (`lgr-media::hud`) : ffmpeg ne décode que les images clés (une par seconde, voir ADR 0002) avec `-skip_frame nokey -threads 2`, découpe la rangée des quatre icônes (géométrie en unités de hauteur d'écran, donc indépendante de la résolution) et sort des images grises brutes. Une partie de 16 minutes s'analyse en environ 18 s à priorité réduite, sans fenêtre.
 - **Détection** (`lgr-core::ultimate`) : fonction pure à hystérésis (2 échantillons pour allumer, 3 pour éteindre, seuils 0,03 / 0,01), car le nombre de chiffres change pendant le cooldown et fait osciller le ratio. Des chiffres déjà présents au début de l'enregistrement ne sont pas un lancement.
 - **Cache** : le résultat est écrit dans `ultimates.json` (temps de jeu), la vidéo n'est analysée qu'une fois ; un échec n'est pas mis en cache et sera retenté.
-- **Clips** : fenêtre de 5 s avant et 8 s après (l'effet d'un ultimate dure plus qu'un kill), thème `ultimate`, rôle `caster`.
+- **Clips** : fenêtre de 5 s avant et 11 s après (l'effet d'un ultimate dure plus qu'un kill), thème `ultimate`, rôle `caster`.
 
 ## Validation
 
@@ -39,7 +39,7 @@ Les tests `crates/engine/tests/hud_calibration.rs` utilisent des vidéos synthé
 
 ## Limites
 
-- Précision de ±0,5 s : les images clés tombent chaque seconde, et l'apparition des chiffres est située au milieu de la seconde précédant leur première observation (mesuré : chiffres réellement apparus à 400,2 s, vus à l'échantillon 401, estimation 400,5). La fenêtre du clip (5 s avant, 8 s après) l'absorbe largement.
+- Précision de ±0,5 s : les images clés tombent chaque seconde, et l'apparition des chiffres est située au milieu de la seconde précédant leur première observation (mesuré : chiffres réellement apparus à 400,2 s, vus à l'échantillon 401, estimation 400,5). La fenêtre du clip (5 s avant, 11 s après) l'absorbe largement.
 - La géométrie suppose la disposition par défaut de l'interface (rangée de sorts centrée en bas) : seule l'échelle varie. Une autre disposition donnera « interface non reconnue ». Le 1080p, l'ultrawide et les autres échelles ne sont validés que sur des vidéos synthétiques.
 - Seuls **vos** ultimates sont détectés (c'est ce qui est visible dans votre interface). Un ultimate qui ne se lance pas (pas de mana, silence) n'affiche pas de cooldown et n'est pas compté.
 - Les mêmes principes permettraient de détecter les lancements de Flash du joueur (icône du sort d'invocateur), non fait à ce stade.

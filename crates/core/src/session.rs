@@ -187,7 +187,7 @@ fn group_label(highlights: &[Highlight]) -> String {
 /// longer than a kill, so the window starts later and ends later.
 const ULTIMATE_CONFIG: ClipConfig = ClipConfig {
     pre_roll_secs: 5.0,
-    post_roll_secs: 8.0,
+    post_roll_secs: 11.0,
 };
 
 /// Highlights for the local player's ultimates cast at the given game times.
@@ -392,7 +392,7 @@ mod tests {
         assert!(clips.iter().all(|c| c.theme == Theme::Ultimate));
         assert_eq!(clips[0].label, "Ultimate ×2");
         assert!((clips[0].start_secs - 195.0).abs() < 1e-9);
-        assert!((clips[0].end_secs - 213.0).abs() < 1e-9);
+        assert!((clips[0].end_secs - 216.0).abs() < 1e-9);
         assert_eq!(clips[1].id, "ultimate-1");
         assert_eq!(
             clips[0].involved,
@@ -454,7 +454,7 @@ mod tests {
         let s = session(vec![ev(1, "ChampionKill", 150.0, "Me", "Foe")], 50.0);
         let c = &build_clips(&s, ClipConfig::default())[0];
         assert!((c.start_secs - 92.0).abs() < 1e-9);
-        assert!((c.end_secs - 104.0).abs() < 1e-9);
+        assert!((c.end_secs - 108.0).abs() < 1e-9);
         assert!((c.game_time_secs - 150.0).abs() < 1e-9);
     }
 

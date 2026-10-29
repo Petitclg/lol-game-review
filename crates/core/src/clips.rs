@@ -13,7 +13,7 @@ impl Default for ClipConfig {
     fn default() -> Self {
         Self {
             pre_roll_secs: 8.0,
-            post_roll_secs: 4.0,
+            post_roll_secs: 8.0,
         }
     }
 }
@@ -79,7 +79,7 @@ mod tests {
         let w = build_windows(&[hl(1, 100.0)], ClipConfig::default());
         assert_eq!(w.len(), 1);
         assert!((w[0].start_secs - 92.0).abs() < f64::EPSILON);
-        assert!((w[0].end_secs - 104.0).abs() < f64::EPSILON);
+        assert!((w[0].end_secs - 108.0).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -93,7 +93,7 @@ mod tests {
         let w = build_windows(&[hl(1, 100.0), hl(2, 108.0)], ClipConfig::default());
         assert_eq!(w.len(), 1);
         assert_eq!(w[0].highlights.len(), 2);
-        assert!((w[0].end_secs - 112.0).abs() < f64::EPSILON);
+        assert!((w[0].end_secs - 116.0).abs() < f64::EPSILON);
     }
 
     #[test]
