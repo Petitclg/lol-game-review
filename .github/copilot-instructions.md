@@ -4,6 +4,8 @@ Application de bureau Windows (Tauri : backend Rust en workspace de petits crate
 
 L'utilisateur parle français : répondez en français, concisément. Identifiants et commentaires de code en anglais, textes visibles par l'utilisateur et documentation en français.
 
+**Portée : ces règles valent pour ce dépôt uniquement.** Elles ne sont pas des préférences globales de l'utilisateur et ne doivent pas être appliquées à un autre projet ni copiées dans une configuration utilisateur.
+
 ## Façon de travailler (règles fixées par l'utilisateur)
 
 1. **Une session par sujet.** Ne pas enchaîner plusieurs chantiers sans lien dans la même session : le contexte renvoyé à chaque appel d'outil fait croître la consommation de tokens. Proposer d'ouvrir une nouvelle session quand le sujet change.
