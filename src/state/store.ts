@@ -1,5 +1,6 @@
+import { withAnnotation } from "../annotations";
 import { filterClips, type ThemeFilter } from "../clips";
-import type { Account, Clip, GameEntry, Status, UltimateStatus } from "../types";
+import type { Account, Annotation, Annotations, Clip, GameEntry, Status, UltimateStatus } from "../types";
 
 export interface Progress {
   sessionId: string;
@@ -27,6 +28,8 @@ export interface State {
   selectedClipId: string | null;
   /** Dernier statut d'analyse des ultimates reçu pour la partie sélectionnée. */
   ultimate: { sessionId: string; status: UltimateStatus } | null;
+  /** Annotations de la partie sélectionnée, par identifiant de moment. */
+  annotations: Annotations;
   notice: string | null;
 }
 
@@ -49,6 +52,8 @@ export type Action =
   | { type: "selectClip"; clipId: string }
   | { type: "stepClip"; delta: number }
   | { type: "ultimateLoaded"; sessionId: string; status: UltimateStatus | null }
+  | { type: "annotationsLoaded"; sessionId: string; annotations: Annotations }
+  | { type: "annotationSaved"; sessionId: string; partId: string; annotation: Annotation }
   | { type: "notice"; message: string | null };
 
 export function initialState(): State {
@@ -69,6 +74,7 @@ export function initialState(): State {
     theme: "all",
     selectedClipId: null,
     ultimate: null,
+    annotations: {},
     notice: null,
   };
 }
@@ -119,7 +125,7 @@ export function reducer(state: State, action: Action): State {
         gamesError: null,
         ...(stillThere
           ? {}
-          : { selectedGameId: null, clips: [], selectedClipId: null, clipsError: null, ultimate: null }),
+          : { selectedGameId: null, clips: [], selectedClipId: null, clipsError: null, ultimate: null, annotations: {} }),
       };
     }
     case "gamesFailed":
@@ -136,6 +142,7 @@ export function reducer(state: State, action: Action): State {
         theme: "all",
         selectedClipId: null,
         ultimate: null,
+        annotations: {},
         notice: null,
       };
     case "clipsLoading":
@@ -188,6 +195,19 @@ export function reducer(state: State, action: Action): State {
       return {
         ...state,
         ultimate: action.status ? { sessionId: action.sessionId, status: action.status } : null,
+      };
+    }
+    case "annotationsLoaded": {
+      const game = selectedGame(state);
+      if (!game || game.sessionId !== action.sessionId) return state;
+      return { ...state, annotations: action.annotations };
+    }
+    case "annotationSaved": {
+      const game = selectedGame(state);
+      if (!game || game.sessionId !== action.sessionId) return state;
+      return {
+        ...state,
+        annotations: withAnnotation(state.annotations, action.partId, action.annotation),
       };
     }
     case "notice":

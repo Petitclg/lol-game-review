@@ -49,6 +49,7 @@ function mount(state: State) {
     onTheme: vi.fn(),
     onSelectClip: vi.fn(),
     onStep: vi.fn(),
+    onAnnotate: vi.fn(),
   });
   document.body.appendChild(view.el);
   view.update(state);

@@ -1,3 +1,4 @@
+pub mod annotations;
 pub mod clips;
 pub mod events;
 pub mod loading;

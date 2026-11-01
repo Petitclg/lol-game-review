@@ -51,6 +51,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     onTheme: (theme) => store.dispatch({ type: "setTheme", theme }),
     onSelectClip: (clipId) => store.dispatch({ type: "selectClip", clipId }),
     onStep: (delta) => store.dispatch({ type: "stepClip", delta }),
+    onAnnotate: (partId, tags, note) => annotate(partId, tags, note),
   });
   const side = createSidePanel();
 
@@ -150,9 +151,39 @@ export function createApp(root: HTMLElement, backend: Backend): App {
       const clips = await backend.getClips(sessionId);
       store.dispatch({ type: "clipsLoaded", sessionId, clips });
       void loadUltimate(sessionId);
+      void loadAnnotations(sessionId);
     } catch (err) {
       store.dispatch({ type: "clipsFailed", error: errorMessage(err) });
     }
+  }
+
+  async function loadAnnotations(sessionId: string): Promise<void> {
+    try {
+      const annotations = await backend.getAnnotations(sessionId);
+      store.dispatch({ type: "annotationsLoaded", sessionId, annotations });
+    } catch (err) {
+      store.dispatch({ type: "notice", message: `Annotations illisibles : ${errorMessage(err)}` });
+    }
+  }
+
+  // Les enregistrements partent dans l'ordre des clics : deux appels simultanés pourraient
+  // être traités dans le désordre et laisser sur le disque l'ancienne version.
+  let saveQueue: Promise<void> = Promise.resolve();
+
+  function annotate(partId: string, tags: string[], note: string): void {
+    const sessionId = selectedGame(store.getState())?.sessionId;
+    if (!sessionId) return;
+    store.dispatch({ type: "annotationSaved", sessionId, partId, annotation: { tags, note: note.trim() } });
+    saveQueue = saveQueue
+      .then(() => backend.setAnnotation(sessionId, partId, tags, note))
+      .then(() => undefined)
+      .catch((err: unknown) => {
+        store.dispatch({
+          type: "notice",
+          message: `Annotation non enregistrée : ${errorMessage(err)}`,
+        });
+        return loadAnnotations(sessionId);
+      });
   }
 
   async function loadUltimate(sessionId: string): Promise<void> {

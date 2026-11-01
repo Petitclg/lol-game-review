@@ -15,6 +15,8 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 | F5 | Chaque clip montre l'action du joueur. |
 | F6 | Chaque clip expose les items, le niveau, le KDA et les sorts d'invocateur du joueur, des alliés et des adversaires, et analyse les joueurs impliqués dans le moment : niveaux d'avance, avance de valeur d'items, Flash équipé. Les cooldowns sont hors périmètre (décision du 2026-10-28). |
 | F7 | Mise à jour automatique vers la dernière release au démarrage. |
+| F8 | Les clips dont les fenêtres se recoupent (un kill, une mort et un ultimate rapprochés) sont fusionnés en un seul clip, visible dans chacun de ses thèmes ([ADR 0008](../adr/0008-clip-merging-and-annotations.md)). |
+| F9 | Chaque moment d'un clip peut être annoté : étiquettes (erreurs de mort, bons réflexes, teamfight) et note libre ; les annotations survivent à la régénération des clips. |
 
 ## Exigences non fonctionnelles
 

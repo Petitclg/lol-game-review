@@ -113,6 +113,8 @@ pub fn run() {
             commands::list_games,
             commands::generate_clips,
             commands::get_clips,
+            commands::get_annotations,
+            commands::set_annotation,
             commands::delete_recording,
             commands::get_ultimate_status,
             commands::get_settings,

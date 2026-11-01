@@ -751,6 +751,125 @@ input[type="checkbox"]:focus-visible {
   color: var(--muted);
 }
 
+.clip-annotated {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Annotations */
+.annotations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.annotation-title {
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.annotation-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.annotation-part {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.annotation-part-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.annotation-theme {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--muted);
+  font-size: 0.72rem;
+}
+.annotation-theme.theme-kill {
+  border-color: var(--win);
+}
+.annotation-theme.theme-death {
+  border-color: var(--loss);
+}
+.annotation-theme.theme-assist {
+  border-color: var(--accent);
+}
+.annotation-theme.theme-objective {
+  border-color: var(--warn);
+}
+.annotation-theme.theme-turret {
+  border-color: #b07cff;
+}
+.annotation-theme.theme-ultimate {
+  border-color: var(--ultimate);
+}
+.annotation-theme.theme-flash {
+  border-color: var(--flash);
+}
+.annotation-theme.theme-key_moment {
+  border-color: var(--key-moment);
+}
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.tag-chip {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.76rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.tag-chip:hover {
+  border-color: var(--muted);
+}
+
+.tag-chip[aria-pressed="true"] {
+  color: #fff;
+  font-weight: 600;
+}
+.tag-chip.tone-bad[aria-pressed="true"] {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.tag-chip.tone-good[aria-pressed="true"] {
+  background: #2a8f64;
+  border-color: var(--win);
+}
+.tag-chip.tone-neutral[aria-pressed="true"] {
+  background: var(--accent-strong);
+  border-color: var(--accent);
+}
+
+.annotation-note {
+  width: 100%;
+  resize: vertical;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 .placeholder {
   padding: 2rem 1rem;
   text-align: center;

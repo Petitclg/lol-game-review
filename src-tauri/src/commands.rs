@@ -1,6 +1,7 @@
 //! IPC commands (see docs/specs/ipc.md). Blocking work runs off the main thread.
 
 use crate::state::AppState;
+use lgr_core::annotations::{Annotation, Annotations};
 use lgr_core::session::Clip;
 use lgr_core::settings::Settings;
 use lgr_core::store::StorageUsage;
@@ -130,6 +131,37 @@ pub async fn get_clips(
 ) -> Result<Vec<Clip>, String> {
     let store = state.store.clone();
     blocking(move || load_session_clips(&store, &session_id).map_err(|e| e.to_string())).await
+}
+
+#[tauri::command]
+pub async fn get_annotations(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Annotations, String> {
+    let store = state.store.clone();
+    blocking(move || {
+        store
+            .load_annotations(&session_id)
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_annotation(
+    state: State<'_, AppState>,
+    session_id: String,
+    part_id: String,
+    tags: Vec<String>,
+    note: String,
+) -> Result<Annotation, String> {
+    let store = state.store.clone();
+    blocking(move || {
+        store
+            .set_annotation(&session_id, &part_id, &tags, &note)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[tauri::command]

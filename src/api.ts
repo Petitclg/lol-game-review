@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { createMockBackend } from "./mock";
 import type {
   Account,
+  Annotation,
+  Annotations,
   Clip,
   ClipsProgress,
   GameEntry,
@@ -21,6 +23,10 @@ export interface Backend {
   listGames(count: number): Promise<GameEntry[]>;
   generateClips(sessionId: string): Promise<Clip[]>;
   getClips(sessionId: string): Promise<Clip[]>;
+  /** Annotations d'une partie, par identifiant de moment. */
+  getAnnotations(sessionId: string): Promise<Annotations>;
+  /** Enregistre l'annotation d'un moment (une annotation vide la supprime) et la renvoie telle que gardée. */
+  setAnnotation(sessionId: string, partId: string, tags: string[], note: string): Promise<Annotation>;
   deleteRecording(sessionId: string): Promise<void>;
   getStatus(): Promise<Status>;
   getSettings(): Promise<Settings>;
@@ -57,6 +63,9 @@ function createTauriBackend(): Backend {
     listGames: (count) => invoke<GameEntry[]>("list_games", { count }),
     generateClips: (sessionId) => invoke<Clip[]>("generate_clips", { sessionId }),
     getClips: (sessionId) => invoke<Clip[]>("get_clips", { sessionId }),
+    getAnnotations: (sessionId) => invoke<Annotations>("get_annotations", { sessionId }),
+    setAnnotation: (sessionId, partId, tags, note) =>
+      invoke<Annotation>("set_annotation", { sessionId, partId, tags, note }),
     deleteRecording: (sessionId) => invoke<void>("delete_recording", { sessionId }),
     getStatus: () => invoke<Status>("get_status"),
     getSettings: () => invoke<Settings>("get_settings"),

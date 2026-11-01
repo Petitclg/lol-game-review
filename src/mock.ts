@@ -1,7 +1,10 @@
 import type { Backend, Unlisten } from "./api";
+import { withAnnotation } from "./annotations";
 import { DEFAULT_SETTINGS, normalizeSettings } from "./settings";
 import type {
   Account,
+  Annotation,
+  Annotations,
   Clip,
   ClipsProgress,
   GameEntry,
@@ -293,8 +296,22 @@ export function buildMockClips(game: GameEntry): Clip[] {
         players: oldStyle ? players.map((p) => ({ ...p, spellKeys: [] })) : players,
         involved,
         myGold: oldStyle ? null : myGold,
+        themes: [theme],
+        parts: [{ id: `${theme}-${t.toFixed(1)}`, theme, label, gameTimeSecs: t }],
       });
     }
+  }
+  // un clip fusionné : un kill suivi de la mort du joueur
+  const death = clips.find((c) => c.theme === "death");
+  if (death) {
+    const killTime = death.gameTimeSecs - 6;
+    death.themes = ["death", "kill"];
+    death.parts = [
+      { id: `kill-${killTime.toFixed(1)}`, theme: "kill", label: "Kill", gameTimeSecs: killTime },
+      ...(death.parts ?? []),
+    ];
+    death.label = `Kill + ${death.label}`;
+    death.startSecs = Math.max(0, killTime - 8);
   }
   return clips;
 }
@@ -317,6 +334,7 @@ export function createMockBackend(): Backend {
     if (g.sessionId && g.clipsReady) generated.set(g.sessionId, clipsFor(g));
   }
   let settings: Settings = { ...DEFAULT_SETTINGS };
+  const annotations = new Map<string, Annotations>();
 
   const MIB = 1024 ** 2;
   const GIB = 1024 ** 3;
@@ -403,6 +421,16 @@ export function createMockBackend(): Backend {
     async getClips(sessionId) {
       await delay(150);
       return generated.get(sessionId) ?? [];
+    },
+    async getAnnotations(sessionId) {
+      await delay(80);
+      return { ...(annotations.get(sessionId) ?? {}) };
+    },
+    async setAnnotation(sessionId, partId, tags, note) {
+      await delay(60);
+      const kept: Annotation = { tags: [...new Set(tags)], note: note.trim() };
+      annotations.set(sessionId, withAnnotation(annotations.get(sessionId) ?? {}, partId, kept));
+      return kept;
     },
     async deleteRecording(sessionId) {
       await delay(200);

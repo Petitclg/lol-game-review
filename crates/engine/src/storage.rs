@@ -196,6 +196,8 @@ mod tests {
             players: vec![],
             involved: vec![],
             my_gold: None,
+            themes: vec![],
+            parts: vec![],
         }
     }
 

@@ -2,11 +2,17 @@
 //!
 //! Layout: `<root>/<session-id>/{session.json, recording.mkv, clips.json, clips/*.mp4}`.
 
+use crate::annotations::{check_part_id, Annotation, AnnotationError, Annotations};
 use crate::session::{Clip, Session};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Serialises read-modify-write cycles on `annotations.json`: the UI may save two
+/// highlights in quick succession.
+static ANNOTATIONS_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -18,6 +24,8 @@ pub enum StoreError {
     Io(#[from] io::Error),
     #[error("corrupt data: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("{0}")]
+    Annotation(#[from] AnnotationError),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -195,6 +203,69 @@ impl SessionStore {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// The annotations of a game; empty when there are none.
+    pub fn load_annotations(&self, id: &str) -> Result<Annotations, StoreError> {
+        let path = self.session_dir(id)?.join("annotations.json");
+        match fs::read(path) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Annotations::new()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Records the annotation of one highlight; an empty one removes it. Returns the
+    /// annotation as kept. Annotations are independent of the clips: regenerating or
+    /// deleting the clips leaves them alone.
+    pub fn set_annotation(
+        &self,
+        id: &str,
+        part_id: &str,
+        tags: &[String],
+        note: &str,
+    ) -> Result<Annotation, StoreError> {
+        check_part_id(part_id)?;
+        let annotation = Annotation::checked(tags, note)?;
+        let _guard = ANNOTATIONS_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut all = self.load_annotations(id)?;
+        if annotation.is_empty() {
+            all.remove(part_id);
+        } else {
+            all.insert(part_id.to_owned(), annotation.clone());
+        }
+        let dir = self.prepare(id)?;
+        write_atomic(&dir.join("annotations.json"), &serde_json::to_vec(&all)?)?;
+        Ok(annotation)
+    }
+
+    /// Deletes the clip files that do not belong to `keep` (clip ids), such as clips that
+    /// have since been merged into another one. Returns the ids of the deleted files.
+    pub fn delete_other_clip_files(
+        &self,
+        id: &str,
+        keep: &[&str],
+    ) -> Result<Vec<String>, StoreError> {
+        let entries = match fs::read_dir(self.clips_dir(id)?) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut removed = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_mp4 = path.extension().is_some_and(|e| e == "mp4");
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if is_mp4 && !keep.contains(&stem) {
+                fs::remove_file(&path)?;
+                removed.push(stem.to_owned());
+            }
+        }
+        Ok(removed)
     }
 
     /// Deletes the whole session directory (used for discarded sessions).
@@ -536,6 +607,91 @@ mod tests {
         assert!(rec.recognized);
         assert_eq!(rec.casts, [1.5, 2.5]);
         assert_eq!(rec.hud_scale, None);
+    }
+
+    #[test]
+    fn annotations_are_kept_per_highlight_and_an_empty_one_removes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        assert!(store.load_annotations("a").unwrap().is_empty());
+        let tags = vec!["face_check".to_owned()];
+        let kept = store
+            .set_annotation("a", "death-160.0", &tags, " trop avancé ")
+            .unwrap();
+        assert_eq!(kept.note, "trop avancé");
+        store
+            .set_annotation("a", "kill-150.0", &[], "joli")
+            .unwrap();
+        let all = store.load_annotations("a").unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all["death-160.0"].tags, tags);
+        store.set_annotation("a", "death-160.0", &[], "").unwrap();
+        let all = store.load_annotations("a").unwrap();
+        assert_eq!(all.keys().collect::<Vec<_>>(), ["kill-150.0"]);
+    }
+
+    #[test]
+    fn invalid_annotations_are_refused_and_change_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        assert!(matches!(
+            store.set_annotation("a", "../x", &[], "n"),
+            Err(StoreError::Annotation(AnnotationError::InvalidPartId))
+        ));
+        assert!(matches!(
+            store.set_annotation("a", "kill-1.0", &["Bad".to_owned()], ""),
+            Err(StoreError::Annotation(AnnotationError::InvalidTag(_)))
+        ));
+        assert!(matches!(
+            store.set_annotation("../a", "kill-1.0", &[], "n"),
+            Err(StoreError::InvalidId)
+        ));
+        assert!(store.load_annotations("a").unwrap().is_empty());
+    }
+
+    #[test]
+    fn annotations_survive_the_deletion_of_the_clips() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.save_session(&session("a", 1)).unwrap();
+        store
+            .set_annotation("a", "kill-1.0", &[], "à garder")
+            .unwrap();
+        store.save_clips("a", &[]).unwrap();
+        store.delete_clips("a").unwrap();
+        assert_eq!(store.load_annotations("a").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clip_files_that_are_no_longer_wanted_are_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.prepare("a").unwrap();
+        let clips = store.clips_dir("a").unwrap();
+        for name in [
+            "kill-0.mp4",
+            "kill-1.mp4",
+            "seq-0.mp4",
+            "seq-1.new.mp4",
+            "notes.txt",
+        ] {
+            fs::write(clips.join(name), b"x").unwrap();
+        }
+        let mut removed = store
+            .delete_other_clip_files("a", &["kill-0", "seq-0"])
+            .unwrap();
+        removed.sort();
+        assert_eq!(removed, ["kill-1", "seq-1.new"]);
+        assert!(clips.join("kill-0.mp4").is_file() && clips.join("seq-0.mp4").is_file());
+        assert!(
+            clips.join("notes.txt").is_file(),
+            "only clip files are touched"
+        );
+        assert!(!clips.join("kill-1.mp4").exists());
+        assert!(store
+            .delete_other_clip_files("none", &[])
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

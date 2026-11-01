@@ -184,6 +184,39 @@ describe("notice", () => {
   });
 });
 
+describe("annotations", () => {
+  const greed = { tags: ["greed"], note: "" };
+
+  it("annotationsLoaded remplace les annotations de la partie sélectionnée uniquement", () => {
+    const s = withGameSelected();
+    expect(reducer(s, { type: "annotationsLoaded", sessionId: "s1", annotations: { "a-1.0": greed } }).annotations).toEqual({
+      "a-1.0": greed,
+    });
+    expect(reducer(s, { type: "annotationsLoaded", sessionId: "autre", annotations: { "a-1.0": greed } })).toBe(s);
+  });
+
+  it("annotationSaved ajoute, remplace, puis retire une annotation vide", () => {
+    let s = withGameSelected();
+    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: greed });
+    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: { tags: [], note: "x" } });
+    expect(s.annotations).toEqual({ "death-5.0": { tags: [], note: "x" } });
+    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: { tags: [], note: "" } });
+    expect(s.annotations).toEqual({});
+  });
+
+  it("annotationSaved d'une autre partie est ignoré", () => {
+    const s = withGameSelected();
+    expect(reducer(s, { type: "annotationSaved", sessionId: "autre", partId: "k-1.0", annotation: greed })).toBe(s);
+  });
+
+  it("changer de partie ou voir la partie disparaître efface les annotations", () => {
+    let s = reducer(withGameSelected(), { type: "annotationSaved", sessionId: "s1", partId: "k-1.0", annotation: greed });
+    expect(reducer(s, { type: "selectGame", gameId: 2 }).annotations).toEqual({});
+    s = reducer(s, { type: "gamesLoaded", games: [game(9, "s9")] });
+    expect(s.annotations).toEqual({});
+  });
+});
+
 describe("createStore", () => {
   it("notifie uniquement lors d'un changement d'état", () => {
     const store = createStore();

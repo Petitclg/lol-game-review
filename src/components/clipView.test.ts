@@ -37,6 +37,7 @@ function setup(clips: Clip[], videoSrc: (p: string) => string | null = (p) => `a
     onTheme: vi.fn(),
     onSelectClip: vi.fn(),
     onStep: vi.fn(),
+    onAnnotate: vi.fn(),
   });
   document.body.appendChild(view.el);
   view.update(stateWith(clips));

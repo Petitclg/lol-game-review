@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { THEME_TABS, countByTheme, filterClips, groupByTheme, isTheme, sortClips } from "./clips";
+import {
+  THEME_TABS,
+  clipParts,
+  clipThemes,
+  countByTheme,
+  filterClips,
+  groupByTheme,
+  isTheme,
+  sortClips,
+} from "./clips";
 import { SAMPLE_CLIPS, makeClip } from "./testUtils";
+import type { Clip, Theme } from "./types";
 import { buildMockClips } from "./mock";
 
 describe("thème « ultimate »", () => {
@@ -64,6 +74,47 @@ describe("filterClips", () => {
   });
   it("thème vide → tableau vide", () => {
     expect(filterClips([], "death")).toEqual([]);
+  });
+});
+
+describe("clips fusionnés", () => {
+  const merged = makeClip("seq-0", "death", 150, {
+    themes: ["death", "kill", "ultimate"],
+    parts: [
+      { id: "kill-150.0", theme: "kill", label: "Kill", gameTimeSecs: 150 },
+      { id: "ultimate-155.5", theme: "ultimate", label: "Ultimate", gameTimeSecs: 155.5 },
+      { id: "death-160.0", theme: "death", label: "Mort", gameTimeSecs: 160 },
+    ],
+  });
+  const plain = makeClip("kill-1", "kill", 400);
+
+  it("un clip fusionné apparaît dans chacun de ses thèmes", () => {
+    const clips = [plain, merged];
+    expect(filterClips(clips, "death").map((c) => c.id)).toEqual(["seq-0"]);
+    expect(filterClips(clips, "kill").map((c) => c.id)).toEqual(["seq-0", "kill-1"]);
+    expect(filterClips(clips, "ultimate").map((c) => c.id)).toEqual(["seq-0"]);
+    expect(filterClips(clips, "flash")).toEqual([]);
+    expect(filterClips(clips, "all")).toHaveLength(2);
+  });
+
+  it("il est compté une fois par thème, et une seule fois dans « Tous »", () => {
+    expect(countByTheme([plain, merged])).toMatchObject({ all: 2, kill: 2, death: 1, ultimate: 1 });
+    expect(groupByTheme([plain, merged]).kill.map((c) => c.id)).toEqual(["seq-0", "kill-1"]);
+  });
+
+  it("clipThemes : thèmes connus, sinon le thème du clip (ancien clip ou thème inconnu ignoré)", () => {
+    expect(clipThemes(merged)).toEqual(["death", "kill", "ultimate"]);
+    expect(clipThemes(plain)).toEqual(["kill"]);
+    expect(clipThemes(makeClip("x", "kill", 1, { themes: [] }))).toEqual(["kill"]);
+    const future: Clip = { ...merged, themes: ["death", "futur" as Theme] };
+    expect(clipThemes(future)).toEqual(["death"]);
+  });
+
+  it("clipParts : les moments du clip, ou un moment unique reconstruit pour un ancien clip", () => {
+    expect(clipParts(merged).map((p) => p.id)).toEqual(["kill-150.0", "ultimate-155.5", "death-160.0"]);
+    expect(clipParts(makeClip("old", "death", 160.04))).toEqual([
+      { id: "death-160.0", theme: "death", label: "death", gameTimeSecs: 160.04 },
+    ]);
   });
 });
 

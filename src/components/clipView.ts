@@ -1,5 +1,5 @@
 import type { Backend } from "../api";
-import { countByTheme, isTheme } from "../clips";
+import { THEME_NAMES, clipParts, clipThemes, countByTheme, type ThemeFilter } from "../clips";
 import { el, replaceChildren } from "../dom";
 import { formatDuration } from "../format";
 import {
@@ -8,7 +8,6 @@ import {
   visibleClips,
   type State,
 } from "../state/store";
-import type { Clip } from "../types";
 import {
   SOURCE_DELETED_REASON,
   ULTIMATE_WARNING,
@@ -16,20 +15,11 @@ import {
   canGenerate,
   shouldShowUltimateWarning,
 } from "../settings";
+import { isEmptyAnnotation } from "../annotations";
+import type { Clip } from "../types";
+import { createAnnotationPanel } from "./annotationPanel";
 import { NO_VIDEO_TOOLTIP } from "./gameList";
 import { renderTabs } from "./tabs";
-import type { ThemeFilter } from "../clips";
-
-export const THEME_NAMES: Record<Clip["theme"], string> = {
-  kill: "Kill",
-  death: "Mort",
-  assist: "Assist",
-  ultimate: "Ultimate",
-  flash: "Flash",
-  key_moment: "Moment clé",
-  objective: "Objectif",
-  turret: "Tour",
-};
 
 export const MEDIA_ERROR_REASONS: Record<number, string> = {
   1: "lecture interrompue",
@@ -45,6 +35,8 @@ export interface ClipViewHandlers {
   onTheme(theme: ThemeFilter): void;
   onSelectClip(id: string): void;
   onStep(delta: number): void;
+  /** Enregistre l'annotation (étiquettes et note) d'un moment du clip. */
+  onAnnotate(partId: string, tags: string[], note: string): void;
 }
 
 export interface ClipView {
@@ -120,7 +112,8 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   });
   const clipTitle = el("h3", { class: "clip-title" });
   const nav = el("div", { class: "player-nav" }, [prevBtn, clipTitle, nextBtn]);
-  const player = el("div", { class: "clip-player" }, [video, videoMsg, videoErr, nav]);
+  const annotations = createAnnotationPanel({ onChange: (partId, tags, note) => h.onAnnotate(partId, tags, note) });
+  const player = el("div", { class: "clip-player" }, [video, videoMsg, videoErr, nav, annotations.el]);
   const browser = el("div", { class: "clip-browser", attrs: { id: "clip-panel", role: "tabpanel" } }, [player, listEl]);
 
   const placeholder = el("p", { class: "placeholder muted" });
@@ -137,6 +130,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   let renderedClipsRef: unknown;
   let renderedTheme: ThemeFilter | undefined;
   let renderedSelected: string | null | undefined;
+  let renderedAnnotations: unknown;
   let playingClip: Clip | null = null;
   let playingSrc: string | null = null;
 
@@ -207,6 +201,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   return {
     el: root,
     update(state) {
+      annotations.update(state);
       const game = selectedGame(state);
       const hasSession = !!game?.sessionId;
       const hasClips = state.clips.length > 0;
@@ -293,25 +288,36 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
       if (
         renderedClipsRef !== state.clips ||
         renderedTheme !== state.theme ||
-        renderedSelected !== current?.id
+        renderedSelected !== current?.id ||
+        renderedAnnotations !== state.annotations
       ) {
         const hadFocus = listEl.contains(document.activeElement);
         replaceChildren(
           listEl,
           visible.map((clip) => {
             const selected = clip.id === current?.id;
+            const themes = clipThemes(clip);
+            const notes = clipParts(clip).filter((p) => !isEmptyAnnotation(state.annotations[p.id])).length;
             return el("li", {}, [
               el(
                 "button",
                 {
-                  class: `clip-item${isTheme(clip.theme) ? ` theme-${clip.theme}` : ""}${selected ? " selected" : ""}`,
+                  class: `clip-item${themes[0] ? ` theme-${themes[0]}` : ""}${selected ? " selected" : ""}`,
                   attrs: { type: "button", "aria-current": selected ? "true" : undefined },
                   on: { click: () => h.onSelectClip(clip.id) },
                 },
                 [
                   el("span", { class: "clip-time", text: formatDuration(clip.gameTimeSecs) }),
                   el("span", { class: "clip-label", text: clip.label }),
-                  el("span", { class: "clip-theme", text: THEME_NAMES[clip.theme] ?? String(clip.theme) }),
+                  el("span", { class: "clip-theme" }, [
+                    themes.map((t) => THEME_NAMES[t]).join(" · "),
+                    notes > 0 &&
+                      el("span", {
+                        class: "clip-annotated",
+                        text: ` ✎ ${notes}`,
+                        attrs: { title: "Annoté", "aria-label": `${notes} moment(s) annoté(s)` },
+                      }),
+                  ]),
                 ],
               ),
             ]);
@@ -323,6 +329,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
       renderedClipsRef = state.clips;
       renderedTheme = state.theme;
       renderedSelected = current?.id;
+      renderedAnnotations = state.annotations;
 
       const idx = visible.findIndex((c) => c.id === current?.id);
       prevBtn.disabled = idx <= 0;

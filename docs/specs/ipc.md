@@ -44,17 +44,25 @@ type Role = "killer" | "victim" | "assist" | "caster";   // caster : lanceur d'u
 interface Involved { name: string; roles: Role[] }
 
 interface Clip {
-  id: string;
-  theme: Theme;
-  label: string;            // "Kill", "Dragon", ...
-  gameTimeSecs: number;     // moment de l'événement
+  id: string;               // "kill-0", ou "seq-0" pour un clip fusionné
+  theme: Theme;             // thème principal
+  themes: Theme[];          // tous les thèmes du clip, `theme` en premier ; [] pour un clip d'une ancienne version
+  label: string;            // "Kill", "Dragon", "Kill + Ultimate + Mort"...
+  gameTimeSecs: number;     // moment du premier évènement
   startSecs: number;        // position dans la vidéo source
   endSecs: number;
   file: string | null;      // chemin absolu du fichier clip, null si non généré
-  players: PlayerSnapshot[]; // état de la partie au moment du clip
+  players: PlayerSnapshot[]; // état de la partie au moment du clip (premier moment)
   involved: Involved[];      // joueurs impliqués (tueur, victime, assistants), [] si inconnu
   myGold: number | null;     // or non dépensé du joueur local, null si non enregistré
+  parts: ClipPart[];         // moments montrés par le clip, par heure ; [] pour un clip d'une ancienne version
 }
+
+/** Un moment montré par un clip. `id` = `thème-temps de jeu à une décimale` : stable, il sert de clé aux annotations. */
+interface ClipPart { id: string; theme: Theme; label: string; gameTimeSecs: number }
+
+/** Étiquettes (identifiants a-z, 0-9, _) et note libre d'un moment. */
+interface Annotation { tags: string[]; note: string }
 ```
 
 ## Commandes
@@ -63,8 +71,10 @@ interface Clip {
 |---|---|---|
 | `get_account` | — | `Account \| null` (null : client lancé, aucun compte connecté ; erreur : client éteint) |
 | `list_games` | `{ count: number }` | `GameEntry[]`, plus récentes d'abord |
-| `generate_clips` | `{ sessionId: string }` | `Clip[]` (extrait les fichiers vidéo, silencieusement) |
+| `generate_clips` | `{ sessionId: string }` | `Clip[]` (extrait les fichiers vidéo, silencieusement ; fusionne les clips qui se recoupent, voir [ADR 0008](../adr/0008-clip-merging-and-annotations.md)) |
 | `get_clips` | `{ sessionId: string }` | `Clip[]` (vide si non générés) |
+| `get_annotations` | `{ sessionId: string }` | `Record<string, Annotation>` par identifiant de moment (vide si aucune) |
+| `set_annotation` | `{ sessionId: string, partId: string, tags: string[], note: string }` | `Annotation` telle que gardée (étiquettes dédoublonnées, note sans blancs de bord) ; une annotation vide supprime celle du moment ; erreur si un identifiant, une étiquette (24 au plus) ou la note (2 000 caractères au plus) est invalide |
 | `delete_recording` | `{ sessionId: string }` | `void` (supprime la vidéo source, garde les clips) |
 | `get_status` | — | `Status` |
 | `get_settings` | — | `Settings` |

@@ -4,6 +4,7 @@ use crate::clips::{build_windows, ClipConfig};
 use crate::events::{classify, Highlight, RawLiveEvent, Theme};
 use crate::moments::key_moments;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemInfo {
@@ -79,6 +80,24 @@ pub struct Clip {
     pub involved: Vec<Involved>,
     #[serde(default)]
     pub my_gold: Option<f64>,
+    /// Every theme of the clip, `theme` first: several once clips of different themes
+    /// have been merged. Empty for clips stored by older versions.
+    #[serde(default)]
+    pub themes: Vec<Theme>,
+    /// The highlights shown by the clip, by time. Annotations are attached to them.
+    #[serde(default)]
+    pub parts: Vec<ClipPart>,
+}
+
+/// A highlight shown by a clip. Its id depends on the theme and the game time only, so it
+/// survives a regeneration and a change of the clip windows or of the merges.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipPart {
+    pub id: String,
+    pub theme: Theme,
+    pub label: String,
+    pub game_time_secs: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -279,7 +298,8 @@ fn key_moment_highlights(session: &Session) -> Vec<Highlight> {
 }
 
 /// Builds the clips of a session, grouped by theme; within a theme, highlights whose
-/// windows overlap (e.g. a multikill) share a single clip. File paths are left empty.
+/// windows overlap (e.g. a multikill) share a single clip; clips of any theme that
+/// overlap are then merged. File paths are left empty.
 #[must_use]
 pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
     build_clips_with(session, cfg, &Casts::default())
@@ -289,6 +309,19 @@ pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
 /// from the recorded HUD.
 #[must_use]
 pub fn build_clips_with(session: &Session, cfg: ClipConfig, casts: &Casts) -> Vec<Clip> {
+    sorted(merge_overlapping(build_clips_unmerged(session, cfg, casts)))
+}
+
+fn sorted(mut clips: Vec<Clip>) -> Vec<Clip> {
+    clips.sort_by(|a, b| a.game_time_secs.total_cmp(&b.game_time_secs));
+    clips
+}
+
+/// Like [`build_clips_with`] but without merging clips of different themes: the clips
+/// as versions up to 0.1.9 cut them. Clips stored by those versions are matched against
+/// these.
+#[must_use]
+pub fn build_clips_unmerged(session: &Session, cfg: ClipConfig, casts: &Casts) -> Vec<Clip> {
     let mut highlights = classify(&session.events, &session.player_aliases);
     highlights.extend(cast_highlights(
         session,
@@ -337,10 +370,11 @@ pub fn build_clips_with(session: &Session, cfg: ClipConfig, casts: &Casts) -> Ve
             let first = &w.highlights[0];
             let snap = snapshot_at(&session.snapshots, first.time_secs);
             let players = snap.map(|s| s.players.clone()).unwrap_or_default();
+            let label = group_label(&w.highlights);
             clips.push(Clip {
                 id: format!("{}-{i}", theme_key(theme)),
                 theme,
-                label: group_label(&w.highlights),
+                label: label.clone(),
                 game_time_secs: first.time_secs,
                 start_secs: to_video_time(w.start_secs, session.video_anchor_secs),
                 end_secs: to_video_time(w.end_secs, session.video_anchor_secs),
@@ -348,11 +382,134 @@ pub fn build_clips_with(session: &Session, cfg: ClipConfig, casts: &Casts) -> Ve
                 involved: involved_players(&w.highlights, &players),
                 my_gold: snap.and_then(|s| s.my_gold),
                 players,
+                themes: vec![theme],
+                parts: vec![ClipPart {
+                    id: part_id(theme, first.time_secs),
+                    theme,
+                    label,
+                    game_time_secs: first.time_secs,
+                }],
             });
         }
     }
-    clips.sort_by(|a, b| a.game_time_secs.total_cmp(&b.game_time_secs));
-    clips
+    sorted(clips)
+}
+
+/// Stable identifier of the highlight of `theme` at `game_time_secs`.
+fn part_id(theme: Theme, game_time_secs: f64) -> String {
+    format!("{}-{game_time_secs:.1}", theme_key(theme))
+}
+
+/// A merged clip never grows beyond this duration: chaining every fight of a long
+/// skirmish would give a clip nobody wants to watch.
+const MAX_MERGED_SECS: f64 = 60.0;
+
+/// The theme a merged clip is shown under first (colour, title): what hurts or counts
+/// most comes first.
+const THEME_PRIORITY: [Theme; 8] = [
+    Theme::Death,
+    Theme::Kill,
+    Theme::Assist,
+    Theme::Ultimate,
+    Theme::Flash,
+    Theme::Objective,
+    Theme::Turret,
+    Theme::KeyMoment,
+];
+
+/// At most this many part labels are spelled out in the label of a merged clip.
+const MERGED_LABELS: usize = 3;
+
+fn merge_involved(into: &mut Vec<Involved>, other: &[Involved]) {
+    for o in other {
+        match into.iter_mut().find(|i| i.name == o.name) {
+            Some(i) => {
+                for role in &o.roles {
+                    if !i.roles.contains(role) {
+                        i.roles.push(*role);
+                    }
+                }
+            }
+            None => into.push(o.clone()),
+        }
+    }
+}
+
+/// One clip made of `group`, which is sorted by start and overlaps from one clip to the
+/// next. The snapshot (players, items, gold) is the one of the earliest highlight.
+fn merge_group(group: Vec<Clip>, number: usize) -> Clip {
+    let mut parts: Vec<ClipPart> = group.iter().flat_map(|c| c.parts.clone()).collect();
+    parts.sort_by(|a, b| a.game_time_secs.total_cmp(&b.game_time_secs));
+    let themes: Vec<Theme> = THEME_PRIORITY
+        .into_iter()
+        .filter(|t| parts.iter().any(|p| p.theme == *t))
+        .collect();
+    let labels: Vec<&str> = parts
+        .iter()
+        .take(MERGED_LABELS)
+        .map(|p| p.label.as_str())
+        .collect();
+    let hidden = parts.len().saturating_sub(MERGED_LABELS);
+    let mut label = labels.join(" + ");
+    if hidden > 0 {
+        let _ = write!(label, " +{hidden}");
+    }
+
+    let start_secs = group.iter().map(|c| c.start_secs).fold(f64::MAX, f64::min);
+    let end_secs = group.iter().map(|c| c.end_secs).fold(f64::MIN, f64::max);
+    let mut by_time = group;
+    by_time.sort_by(|a, b| a.game_time_secs.total_cmp(&b.game_time_secs));
+    let mut involved = Vec::new();
+    for c in &by_time {
+        merge_involved(&mut involved, &c.involved);
+    }
+    let earliest = by_time.swap_remove(0);
+    Clip {
+        id: format!("seq-{number}"),
+        theme: themes.first().copied().unwrap_or(earliest.theme),
+        themes,
+        label,
+        game_time_secs: earliest.game_time_secs,
+        start_secs,
+        end_secs,
+        file: None,
+        players: earliest.players,
+        involved,
+        my_gold: earliest.my_gold,
+        parts,
+    }
+}
+
+/// Merges the clips, whatever their themes, whose windows touch or overlap, so that a
+/// kill followed by a death, with an ultimate in between, is a single clip. A merged
+/// clip lasts at most [`MAX_MERGED_SECS`]; clips that do not overlap are left as they are.
+fn merge_overlapping(mut clips: Vec<Clip>) -> Vec<Clip> {
+    clips.sort_by(|a, b| a.start_secs.total_cmp(&b.start_secs));
+    let mut out = Vec::new();
+    let mut group: Vec<Clip> = Vec::new();
+    let mut group_end = f64::MIN;
+    let mut merged = 0;
+    let mut flush = |group: &mut Vec<Clip>, out: &mut Vec<Clip>| match group.len() {
+        0 => {}
+        1 => out.append(group),
+        _ => {
+            out.push(merge_group(std::mem::take(group), merged));
+            merged += 1;
+        }
+    };
+    for clip in clips {
+        let start = group.first().map_or(clip.start_secs, |c| c.start_secs);
+        let fits =
+            clip.start_secs <= group_end && clip.end_secs.max(group_end) - start <= MAX_MERGED_SECS;
+        if !fits {
+            flush(&mut group, &mut out);
+            group_end = f64::MIN;
+        }
+        group_end = group_end.max(clip.end_secs);
+        group.push(clip);
+    }
+    flush(&mut group, &mut out);
+    out
 }
 
 #[cfg(test)]
@@ -665,10 +822,10 @@ mod tests {
     }
 
     #[test]
-    fn different_themes_stay_separate_and_sorted() {
+    fn different_themes_far_apart_stay_separate_and_sorted() {
         let s = session(
             vec![
-                ev(2, "ChampionKill", 160.0, "Foe", "Me"),
+                ev(2, "ChampionKill", 300.0, "Foe", "Me"),
                 ev(1, "ChampionKill", 150.0, "Me", "Foe"),
             ],
             0.0,
@@ -677,6 +834,111 @@ mod tests {
         let themes: Vec<_> = clips.iter().map(|c| c.theme).collect();
         assert_eq!(themes, [Theme::Kill, Theme::Death]);
         assert_eq!(clips[0].id, "kill-0");
+        assert_eq!(clips[0].themes, [Theme::Kill]);
+        assert_eq!(clips[0].parts.len(), 1);
+        assert_eq!(clips[0].parts[0].id, "kill-150.0");
+    }
+
+    #[test]
+    fn a_kill_and_a_death_that_overlap_make_one_clip() {
+        let s = session(
+            vec![
+                ev(2, "ChampionKill", 160.0, "Foe", "Me"),
+                ev(1, "ChampionKill", 150.0, "Me", "Foe"),
+            ],
+            0.0,
+        );
+        let clips = build_clips(&s, ClipConfig::default());
+        assert_eq!(clips.len(), 1);
+        let c = &clips[0];
+        assert_eq!(c.id, "seq-0");
+        assert_eq!(c.theme, Theme::Death, "the death is what the clip is about");
+        assert_eq!(c.themes, [Theme::Death, Theme::Kill]);
+        assert_eq!(c.game_time_secs, 150.0);
+        assert_eq!((c.start_secs, c.end_secs), (142.0, 168.0));
+        let ids: Vec<_> = c.parts.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["kill-150.0", "death-160.0"]);
+        assert_eq!(
+            c.label,
+            format!("{} + {}", c.parts[0].label, c.parts[1].label)
+        );
+    }
+
+    #[test]
+    fn a_merged_clip_gathers_the_roles_of_both_highlights() {
+        let s = session(
+            vec![
+                ev(1, "ChampionKill", 150.0, "Me", "Foe"),
+                ev(2, "ChampionKill", 160.0, "Foe", "Me"),
+            ],
+            0.0,
+        );
+        let c = &build_clips(&s, ClipConfig::default())[0];
+        let roles = |name: &str| {
+            c.involved
+                .iter()
+                .find(|i| i.name.starts_with(name))
+                .map(|i| i.roles.clone())
+        };
+        assert_eq!(roles("Me"), Some(vec![Role::Killer, Role::Victim]));
+        assert_eq!(roles("Foe"), Some(vec![Role::Victim, Role::Killer]));
+    }
+
+    #[test]
+    fn clips_that_only_touch_are_merged_and_clips_with_a_gap_are_not() {
+        // windows are 16 s long: 150 -> [142, 158]; 166 -> [158, 174] touches; 190 does not
+        let s = session(
+            vec![
+                ev(1, "ChampionKill", 150.0, "Me", "A"),
+                ev(2, "ChampionKill", 166.0, "B", "Me"),
+                ev(3, "ChampionKill", 200.0, "Me", "C"),
+            ],
+            0.0,
+        );
+        let clips = build_clips(&s, ClipConfig::default());
+        assert_eq!(clips.len(), 2);
+        assert_eq!(clips[0].parts.len(), 2);
+        assert_eq!(clips[1].id, "kill-1");
+    }
+
+    #[test]
+    fn a_chain_of_fights_is_cut_so_that_no_merged_clip_exceeds_the_limit() {
+        let events = (0..8u32)
+            .map(|i| {
+                let t = 100.0 + 12.0 * f64::from(i);
+                if i % 2 == 0 {
+                    ev(i + 1, "ChampionKill", t, "Me", "Foe")
+                } else {
+                    ev(i + 1, "ChampionKill", t, "Foe", "Me")
+                }
+            })
+            .collect();
+        let clips = build_clips(&session(events, 0.0), ClipConfig::default());
+        assert!(clips.len() >= 2, "{} clip(s)", clips.len());
+        assert!(clips
+            .iter()
+            .all(|c| c.end_secs - c.start_secs <= MAX_MERGED_SECS));
+        let parts: usize = clips.iter().map(|c| c.parts.len()).sum();
+        assert_eq!(parts, 8, "no highlight is lost");
+    }
+
+    #[test]
+    fn a_long_merged_clip_names_only_its_first_highlights() {
+        let events = (0..4u32)
+            .map(|i| {
+                let t = 100.0 + 12.0 * f64::from(i);
+                ev(
+                    i + 1,
+                    "ChampionKill",
+                    t,
+                    if i % 2 == 0 { "Me" } else { "Foe" },
+                    if i % 2 == 0 { "Foe" } else { "Me" },
+                )
+            })
+            .collect();
+        let clips = build_clips(&session(events, 0.0), ClipConfig::default());
+        assert_eq!(clips.len(), 1);
+        assert!(clips[0].label.ends_with(" +1"), "{}", clips[0].label);
     }
 
     #[test]
