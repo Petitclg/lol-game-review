@@ -6,7 +6,6 @@
 // environment. Without the webhook the announcement is skipped, not failed.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
 import { announce } from "./release-notes.mjs";
 
 const args = process.argv.slice(2);
@@ -18,8 +17,8 @@ try {
     tag,
     env: process.env,
     dryRun,
-    git: (gitArgs) => execFileSync("git", gitArgs, { encoding: "utf8" }),
-    readFile: (path) => (existsSync(path) ? readFileSync(path, "utf8") : null),
+    git: (gitArgs) =>
+      execFileSync("git", gitArgs, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
   });
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

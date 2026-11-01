@@ -216,10 +216,10 @@ describe("announce", () => {
       env: { DISCORD_WEBHOOK_URL: WEBHOOK, GITHUB_REPOSITORY: "Petitclg/lol-game-review" },
       git: (args) => {
         calls.push(args);
+        if (args[0] === "show") throw new Error("path not in tag");
         if (args[0] === "tag") return "v0.1.6\nv0.1.7\nv0.1.8\n";
         return "feat: détection du flash\nfix: clips décalés\nchore: version 0.1.8\n";
       },
-      readFile: () => null,
       log: vi.fn(),
       fetchImpl: vi.fn().mockResolvedValue(response(204)),
       sleep: vi.fn(),
@@ -232,37 +232,52 @@ describe("announce", () => {
     const d = deps();
     const result = await announce(d);
     expect(result.posted).toBe(true);
-    expect(d.calls[1]).toEqual(["log", "--no-merges", "--format=%s", "v0.1.7..v0.1.8"]);
+    expect(d.calls[2]).toEqual(["log", "--no-merges", "--format=%s", "v0.1.7..v0.1.8"]);
     const body = JSON.parse(d.fetchImpl.mock.calls[0][1].body);
     expect(body.embeds[0].description).toContain("• Détection du flash");
     expect(body.embeds[0].description).toContain("• Clips décalés");
     expect(body.embeds[0].description).not.toContain("version 0.1.8");
   });
 
-  it("uses the hand-written notes of the release when they exist", async () => {
+  it("uses the hand-written notes of the release, read from the tag, when they exist", async () => {
+    const calls = [];
     const d = deps({
-      readFile: (path) =>
-        path === "docs/release-notes/v0.1.8.md" ? "**Le Flash est détecté !**" : null,
+      git: (args) => {
+        calls.push(args);
+        return "**Le Flash est détecté !**\n";
+      },
     });
     await announce(d);
     const body = JSON.parse(d.fetchImpl.mock.calls[0][1].body);
     expect(body.embeds[0].description).toBe("**Le Flash est détecté !**");
-    expect(d.calls).toEqual([]);
+    expect(calls).toEqual([["show", "v0.1.8:docs/release-notes/v0.1.8.md"]]);
+  });
+
+  it("ignores empty hand-written notes", async () => {
+    const d = deps({
+      git: (args) => {
+        if (args[0] === "show") return "  \n";
+        if (args[0] === "tag") return "v0.1.8\n";
+        return "feat: premier jet\n";
+      },
+    });
+    await announce(d);
+    const body = JSON.parse(d.fetchImpl.mock.calls[0][1].body);
+    expect(body.embeds[0].description).toContain("• Premier jet");
   });
 
   it("covers the whole history for the first release", async () => {
+    const calls = [];
     const d = deps({
       tag: "v0.1.0",
-      git: (args) => (args[0] === "tag" ? "v0.1.0\n" : "feat: premier jet\n"),
+      git: (args) => {
+        calls.push(args);
+        if (args[0] === "show") throw new Error("absent");
+        return args[0] === "tag" ? "v0.1.0\n" : "feat: premier jet\n";
+      },
     });
-    const calls = [];
-    const git = d.git;
-    d.git = (args) => {
-      calls.push(args);
-      return git(args);
-    };
     await announce(d);
-    expect(calls[1]).toEqual(["log", "--no-merges", "--format=%s", "v0.1.0"]);
+    expect(calls[2]).toEqual(["log", "--no-merges", "--format=%s", "v0.1.0"]);
   });
 
   it("skips quietly when no webhook is configured", async () => {

@@ -166,20 +166,27 @@ async function retryDelayMs(response, attempt) {
   return 1000 * 2 ** attempt;
 }
 
+/** Hand-written notes of a release, read from the tag's own tree; empty when absent. */
+function curatedNotes(git, tag) {
+  try {
+    return git(["show", `${tag}:docs/release-notes/${tag}.md`]).trim();
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Builds and posts the announcement of `tag`.
  * @param {object} deps
  * @param {string} deps.tag release tag, e.g. `v0.2.0`
  * @param {Record<string, string | undefined>} deps.env
  * @param {(args: string[]) => string} deps.git runs git and returns its output
- * @param {(path: string) => string | null} deps.readFile text of a file, `null` if absent
  * @param {boolean} [deps.dryRun] print the payload instead of posting it
  */
 export async function announce({
   tag,
   env,
   git,
-  readFile,
   dryRun = false,
   log = console.log,
   fetchImpl,
@@ -198,8 +205,7 @@ export async function announce({
     }
   }
 
-  const curated = readFile(`docs/release-notes/${tag}.md`);
-  let description = curated?.trim() ?? "";
+  let description = curatedNotes(git, tag);
   if (!description) {
     const tags = git(["tag", "--list", "v*"]).split("\n").filter(Boolean);
     const previous = previousTag(tags, tag);

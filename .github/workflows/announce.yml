@@ -27,10 +27,10 @@ jobs:
     name: Discord
     runs-on: ubuntu-latest
     steps:
-      # The tag's own tree holds docs/release-notes/<tag>.md; full history for the commit range.
+      # The script comes from the ref being run (the tag for a release, main for a manual
+      # run); hand-written notes are read from the announced tag with `git show`.
       - uses: actions/checkout@v4
         with:
-          ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
