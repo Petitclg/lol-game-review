@@ -99,6 +99,7 @@ mod tests {
             started_at_ms: started,
             player_aliases: vec![],
             video_anchor_secs: 0.0,
+            anchor_verified: true,
             recording_file: None,
             last_game_time_secs: 600.0,
             events: vec![],

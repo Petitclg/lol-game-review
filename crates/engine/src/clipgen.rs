@@ -1,6 +1,7 @@
 //! Clip generation from a stored session and its recording.
 
 use lgr_core::clips::ClipConfig;
+use lgr_core::loading::{anchor_from_loading_end, frame_diffs, loading_end_secs};
 use lgr_core::session::{build_clips_with, Clip, Session};
 use lgr_core::store::{SessionStore, StoreError, UltimateRecord};
 use lgr_core::ultimate::detect_ultimates;
@@ -53,6 +54,12 @@ pub enum UltimateOutcome {
 /// Finds the local player's ultimate casts in a recording; abstracted for tests.
 pub trait UltimateDetector {
     fn analyse(&self, recording: &Path) -> Result<UltimateOutcome, String>;
+
+    /// Video time (secs) at which the game starts, when the recording begins with a
+    /// loading screen; `Ok(None)` when it does not. An error means "could not tell".
+    fn loading_end_secs(&self, _recording: &Path) -> Result<Option<f64>, String> {
+        Err("video analysis is disabled".into())
+    }
 }
 
 /// Reads the cooldown digits of the ability icons in the recorded HUD, after locating
@@ -74,6 +81,14 @@ impl UltimateDetector for HudUltimateDetector {
             None => UltimateOutcome::Unrecognized,
         })
     }
+
+    fn loading_end_secs(&self, recording: &Path) -> Result<Option<f64>, String> {
+        let raw =
+            lgr_media::extract_start_frames(&self.ffmpeg, recording, lgr_media::START_SCAN_SECS)
+                .map_err(|e| e.to_string())?;
+        let diffs = frame_diffs(&raw, lgr_media::START_FRAME_LEN);
+        Ok(loading_end_secs(&diffs))
+    }
 }
 
 /// Detector for callers that do not analyse the video.
@@ -83,6 +98,44 @@ impl UltimateDetector for NoUltimates {
     fn analyse(&self, _: &Path) -> Result<UltimateOutcome, String> {
         Err("video analysis is disabled".into())
     }
+}
+
+/// Sessions saved before the anchor ignored the frozen clock of the loading screen have
+/// an anchor near zero even though their recording starts earlier; larger anchors come
+/// from a recording that began mid-game and are right.
+const SUSPECT_ANCHOR_SECS: f64 = 5.0;
+
+/// Checks the video anchor of a session saved by an older version against its
+/// recording and corrects it. When the anchor changes, everything derived from it (the
+/// ultimate analysis and the generated clips) is discarded, as it is mistimed.
+/// Nothing is changed when the recording is missing or cannot be analysed.
+fn verified_session(
+    store: &SessionStore,
+    detector: &dyn UltimateDetector,
+    mut session: Session,
+) -> Session {
+    if session.anchor_verified || session.video_anchor_secs.abs() > SUSPECT_ANCHOR_SECS {
+        return session;
+    }
+    let Ok(recording) = store.recording_path(&session.id) else {
+        return session;
+    };
+    if !recording.is_file() {
+        return session;
+    }
+    let Ok(loading_end) = detector.loading_end_secs(&recording) else {
+        return session;
+    };
+    let corrected = loading_end.map(anchor_from_loading_end);
+    session.anchor_verified = true;
+    if let Some(anchor) = corrected {
+        session.video_anchor_secs = anchor;
+    }
+    if store.save_session(&session).is_ok() && corrected.is_some() {
+        let _ = store.delete_ultimates(&session.id);
+        let _ = store.delete_clips(&session.id);
+    }
+    session
 }
 
 /// Ultimate casts of a session in game time. The outcome is cached (including
@@ -211,7 +264,7 @@ pub fn generate_clips_with(
     session_id: &str,
     mut progress: impl FnMut(usize, usize),
 ) -> Result<Vec<Clip>, ClipError> {
-    let session = store.load_session(session_id)?;
+    let session = verified_session(store, detector, store.load_session(session_id)?);
     let recording = store.recording_path(session_id)?;
     let clips_dir = store.clips_dir(session_id)?;
     let casts = ultimate_casts(store, detector, &session);
@@ -296,6 +349,7 @@ mod tests {
                 started_at_ms: 0,
                 player_aliases: vec!["Me".into()],
                 video_anchor_secs: 0.0,
+                anchor_verified: false,
                 recording_file: None,
                 last_game_time_secs: 500.0,
                 events: vec![kill(1, 100.0), kill(2, 300.0)],
@@ -554,5 +608,109 @@ mod tests {
         let store = SessionStore::new(dir.path());
         let err = generate_clips(&store, &cutter(false), "nope", |_, _| {}).unwrap_err();
         assert!(matches!(err, ClipError::Store(StoreError::NotFound)));
+    }
+
+    struct LoadingDetector {
+        end: Result<Option<f64>, String>,
+        calls: std::cell::Cell<u32>,
+    }
+
+    impl UltimateDetector for LoadingDetector {
+        fn analyse(&self, _: &Path) -> Result<UltimateOutcome, String> {
+            Ok(UltimateOutcome::Unrecognized)
+        }
+
+        fn loading_end_secs(&self, _: &Path) -> Result<Option<f64>, String> {
+            self.calls.set(self.calls.get() + 1);
+            self.end.clone()
+        }
+    }
+
+    fn loading(end: Result<Option<f64>, String>) -> LoadingDetector {
+        LoadingDetector {
+            end,
+            calls: std::cell::Cell::new(0),
+        }
+    }
+
+    #[test]
+    fn an_anchor_taken_from_a_frozen_loading_clock_is_corrected_and_clips_are_redone() {
+        let (_d, store) = setup(true);
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        store
+            .save_ultimates(
+                "s",
+                &UltimateRecord {
+                    recognized: true,
+                    hud_scale: Some(1.0),
+                    casts: vec![150.0],
+                },
+            )
+            .unwrap();
+
+        let det = loading(Ok(Some(70.0)));
+        let c = cutter(false);
+        let clips = generate_clips_with(&store, &c, &det, "s", |_, _| {}).unwrap();
+
+        let session = store.load_session("s").unwrap();
+        assert!((session.video_anchor_secs - -69.5).abs() < 1e-9);
+        assert!(session.anchor_verified);
+        // 100 s game time - 8 s pre-roll + 69.5 s of loading screen
+        assert!((clips[0].start_secs - 161.5).abs() < 1e-9);
+        assert_eq!(
+            c.calls.borrow().len(),
+            clips.len(),
+            "every clip is cut again"
+        );
+        assert!(store
+            .load_ultimates("s")
+            .unwrap()
+            .is_some_and(|r| !r.recognized));
+    }
+
+    #[test]
+    fn a_recording_without_loading_screen_keeps_its_anchor_and_clips() {
+        let (_d, store) = setup(true);
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+
+        let c = cutter(false);
+        generate_clips_with(&store, &c, &loading(Ok(None)), "s", |_, _| {}).unwrap();
+
+        let session = store.load_session("s").unwrap();
+        assert!(session.video_anchor_secs.abs() < 1e-9 && session.anchor_verified);
+        assert!(c.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn an_analysis_failure_leaves_the_session_to_be_checked_later() {
+        let (_d, store) = setup(true);
+        let det = loading(Err("no ffmpeg".into()));
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert!(!store.load_session("s").unwrap().anchor_verified);
+    }
+
+    #[test]
+    fn a_mid_game_anchor_or_a_verified_session_is_not_analysed() {
+        let (_d, store) = setup(true);
+        let mut s = store.load_session("s").unwrap();
+        s.video_anchor_secs = 251.0;
+        store.save_session(&s).unwrap();
+        let det = loading(Ok(Some(70.0)));
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        s.video_anchor_secs = 0.0;
+        s.anchor_verified = true;
+        store.save_session(&s).unwrap();
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert_eq!(det.calls.get(), 0);
+        assert!(store.load_session("s").unwrap().video_anchor_secs.abs() < 1e-9);
+    }
+
+    #[test]
+    fn without_a_recording_the_anchor_cannot_be_checked() {
+        let (_d, store) = setup(false);
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).ok();
+        let det = loading(Ok(Some(70.0)));
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).ok();
+        assert_eq!(det.calls.get(), 0);
     }
 }

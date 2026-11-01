@@ -165,6 +165,15 @@ impl SessionStore {
         Ok(())
     }
 
+    /// Forgets the ultimate analysis (its cast times depend on the video anchor).
+    pub fn delete_ultimates(&self, id: &str) -> Result<(), StoreError> {
+        match fs::remove_file(self.session_dir(id)?.join("ultimates.json")) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Deletes the whole session directory (used for discarded sessions).
     pub fn delete_session(&self, id: &str) -> Result<(), StoreError> {
         let dir = self.session_dir(id)?;
@@ -346,6 +355,7 @@ mod tests {
             started_at_ms: started,
             player_aliases: vec!["Me".into()],
             video_anchor_secs: 0.0,
+            anchor_verified: true,
             recording_file: None,
             last_game_time_secs: 60.0,
             events: vec![],

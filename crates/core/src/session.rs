@@ -49,6 +49,11 @@ pub struct Session {
     pub player_aliases: Vec<String>,
     /// Game time (secs) corresponding to video time 0.
     pub video_anchor_secs: f64,
+    /// `true` once the anchor comes from a running game clock or was checked against
+    /// the recording. Sessions saved by older versions may have been anchored on the
+    /// frozen clock of the loading screen.
+    #[serde(default)]
+    pub anchor_verified: bool,
     pub recording_file: Option<String>,
     pub last_game_time_secs: f64,
     pub events: Vec<RawLiveEvent>,
@@ -322,6 +327,7 @@ mod tests {
             started_at_ms: 0,
             player_aliases: vec!["Me".into()],
             video_anchor_secs: anchor,
+            anchor_verified: true,
             recording_file: None,
             last_game_time_secs: 1000.0,
             events,

@@ -10,6 +10,9 @@ pub struct SessionTracker {
     session: Session,
     record_start_ms: u64,
     best_anchor: Option<f64>,
+    /// Anchor of the very first sample, used only until the game clock is seen running.
+    first_anchor: Option<f64>,
+    previous_game_time: Option<f64>,
 }
 
 impl SessionTracker {
@@ -21,6 +24,7 @@ impl SessionTracker {
                 started_at_ms: record_start_ms,
                 player_aliases: Vec::new(),
                 video_anchor_secs: 0.0,
+                anchor_verified: false,
                 recording_file,
                 last_game_time_secs: 0.0,
                 events: Vec::new(),
@@ -28,6 +32,8 @@ impl SessionTracker {
             },
             record_start_ms,
             best_anchor: None,
+            first_anchor: None,
+            previous_game_time: None,
         }
     }
 
@@ -40,9 +46,15 @@ impl SessionTracker {
         }
 
         let anchor = anchor_from_sample(game_time, now_ms, self.record_start_ms);
-        let best = self.best_anchor.map_or(anchor, |b| b.max(anchor));
-        self.best_anchor = Some(best);
-        s.video_anchor_secs = best;
+        self.first_anchor.get_or_insert(anchor);
+        // The API answers during the loading screen with a frozen clock, which would look
+        // like the best (least stale) sample; only samples where the clock moved count.
+        if self.previous_game_time.is_some_and(|p| game_time > p) {
+            self.best_anchor = Some(self.best_anchor.map_or(anchor, |b| b.max(anchor)));
+        }
+        self.previous_game_time = Some(game_time);
+        s.video_anchor_secs = self.best_anchor.or(self.first_anchor).unwrap_or(anchor);
+        s.anchor_verified = self.best_anchor.is_some();
 
         s.last_game_time_secs = s.last_game_time_secs.max(game_time);
         if data.events.events.len() >= s.events.len() {
@@ -159,6 +171,37 @@ mod tests {
         t.observe(&data(20.0, 0), 20_100); // anchor -0.1 (lower latency)
         t.observe(&data(30.0, 0), 31_000); // anchor -1.0
         assert!((t.session().video_anchor_secs - -0.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_frozen_loading_screen_clock_does_not_set_the_anchor() {
+        let mut t = SessionTracker::new("s".into(), 0, None);
+        // The API answers during a 70 s loading screen with the clock stuck at 0.03.
+        for i in 0..4 {
+            t.observe(&data(0.03, 0), 300 + i * 3_000);
+        }
+        // The game then starts: 2.0 s of game time at 72.3 s of video.
+        t.observe(&data(2.0, 0), 72_300);
+        t.observe(&data(5.0, 0), 75_300);
+        assert!((t.session().video_anchor_secs - -70.3).abs() < 1e-9);
+        assert!(t.session().anchor_verified);
+    }
+
+    #[test]
+    fn a_frozen_clock_alone_is_not_a_verified_anchor() {
+        let mut t = SessionTracker::new("s".into(), 0, None);
+        for i in 0..3 {
+            t.observe(&data(0.03, 0), 300 + i * 3_000);
+        }
+        assert!(!t.session().anchor_verified);
+    }
+
+    #[test]
+    fn a_single_sample_still_gives_an_anchor() {
+        let mut t = SessionTracker::new("s".into(), 1_000, None);
+        t.observe(&data(10.0, 0), 11_000);
+        assert!(t.session().video_anchor_secs.abs() < 1e-9);
+        assert!(!t.session().anchor_verified);
     }
 
     #[test]
