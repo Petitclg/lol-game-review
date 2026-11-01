@@ -82,6 +82,7 @@ Une fois la release publiée, le workflow poste les nouveautés dans un salon Di
 
 - Commits : [Conventional Commits](https://www.conventionalcommits.org/).
 - Décisions d'architecture : [docs/adr](docs/adr).
+- Règles de travail pour les agents Copilot (périmètre, tests, publications, données) : [.github/copilot-instructions.md](.github/copilot-instructions.md).
 
 ## Licence
 
