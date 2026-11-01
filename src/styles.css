@@ -1151,7 +1151,7 @@ input[type="checkbox"]:focus-visible {
   margin: 0.4rem 0 0;
 }
 
-/* Vue « Annotations » (toutes parties) */
+/* Vue Â« Annotations Â» (toutes parties) */
 .annotations-view {
   display: flex;
   flex-direction: column;

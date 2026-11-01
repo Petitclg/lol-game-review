@@ -30,7 +30,7 @@ L'utilisateur parle français : répondez en français, concisément. Identifian
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace            # LGR_REQUIRE_FFMPEG=1 fait échouer (au lieu d'ignorer) les tests qui ont besoin de ffmpeg
-npm run typecheck; npm run lint; npm test
+npm run typecheck; npm run lint; npm test; npm run build   # `npm run build` aussi : la CI le lance, et il échoue sur un fichier invalide que les tests ne voient pas
 npx tauri build --no-bundle       # exe de test, après un `npm run build` ; ajouter `npm ci` seulement si les dépendances changent
 ```
 
@@ -53,6 +53,6 @@ Données utilisateur : `%LOCALAPPDATA%\com.petitclg.lolgamereview` (`sessions/<i
 ## Environnement d'exécution (Windows, PowerShell)
 
 - PowerShell sans `&&`, `||` ni here-doc ; enchaîner avec `;` et tester `$?` ou `$LASTEXITCODE`.
-- Créer et modifier les fichiers avec les outils d'édition, pas avec `Set-Content` ni des redirections.
+- Créer et modifier les fichiers avec les outils d'édition, pas avec `Set-Content`, `Add-Content` ni des redirections : PowerShell 5 écrit en ANSI et casse l'UTF-8 dès qu'il y a un accent ou des guillemets français (cela a fait échouer le build de la v0.1.12).
 - **Ne pas lancer une commande dans le même bloc parallèle qu'une édition dont elle dépend** : elle peut s'exécuter avant que l'édition soit écrite et donner un résultat périmé. Relancer la commande séparément.
 - Le dépôt est en CRLF localement ; les avertissements « CRLF will be replaced by LF » de git sont normaux.
