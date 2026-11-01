@@ -38,9 +38,9 @@ pub const SCALES: [f64; 11] = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8,
 const CELL: usize = 32;
 /// Number of icons read: Q, W, E, R, summoner spell one, summoner spell two.
 pub const ICONS: usize = 6;
-/// Values per second: one digit ratio per icon, then the brightness of the two
-/// summoner-spell icons.
-pub const COLUMNS: usize = ICONS + 2;
+/// Values per second: one digit ratio per icon, the brightness of the two summoner-spell
+/// icons, then the strict digit ratio and the flatness of the ultimate.
+pub const COLUMNS: usize = ICONS + 4;
 /// Cells of the two summoner-spell icons.
 const SUMMONER_CELLS: [usize; 2] = [4, 5];
 const FRAME_W: usize = CELL * ICONS;
@@ -49,10 +49,18 @@ pub const ULTIMATE_CELL: usize = 3;
 
 /// Luma at or above which a pixel counts as part of a white cooldown digit.
 const WHITE: u8 = 225;
+/// Luma of the pure white of cooldown digits. The artwork of a ready icon can reach about
+/// 245 (Nocturne's R shows a background of 0.014 to 0.041 at 225, but at most 0.009 here),
+/// which makes `WHITE` ambiguous for it; digits stay far above this level.
+const STRONG_WHITE: u8 = 240;
 /// Centre band of a cell where the cooldown digits are drawn; it excludes the mana cost
 /// printed in the top-right corner, which is shown even when the ability is ready.
 const BAND_ROWS: std::ops::Range<usize> = 12..23;
 const BAND_COLS: std::ops::Range<usize> = 6..26;
+/// Rows (above and below the digit band) and columns of a cell, inside the icon, where
+/// the flatness is measured: no digits, no mana cost, no border.
+const FLAT_ROWS: [usize; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 25, 26, 27, 28, 29];
+const FLAT_COLS: std::ops::Range<usize> = 4..28;
 
 fn frame_bytes(candidates: usize) -> usize {
     FRAME_W * CELL * candidates
@@ -126,12 +134,23 @@ pub fn row_args(recording: &Path, scales: &[f64]) -> Vec<OsString> {
 /// Fraction of white pixels in the digit band of one icon cell of one candidate.
 #[must_use]
 pub fn digit_ratio(frame: &[u8], candidate: usize, cell: usize) -> f32 {
+    white_ratio(frame, candidate, cell, WHITE)
+}
+
+/// Like [`digit_ratio`] with a stricter white: only the pure white of the digits, not the
+/// bright streaks that the artwork of some ready icons has (Nocturne's R).
+#[must_use]
+pub fn strong_digit_ratio(frame: &[u8], candidate: usize, cell: usize) -> f32 {
+    white_ratio(frame, candidate, cell, STRONG_WHITE)
+}
+
+fn white_ratio(frame: &[u8], candidate: usize, cell: usize, threshold: u8) -> f32 {
     let mut white = 0usize;
     let mut total = 0usize;
     for y in BAND_ROWS {
         for x in BAND_COLS {
             total += 1;
-            if frame[(candidate * CELL + y) * FRAME_W + cell * CELL + x] >= WHITE {
+            if frame[(candidate * CELL + y) * FRAME_W + cell * CELL + x] >= threshold {
                 white += 1;
             }
         }
@@ -156,9 +175,29 @@ pub fn cell_brightness(frame: &[u8], candidate: usize, cell: usize) -> f32 {
     sum as f32 / (CELL * CELL * 255) as f32
 }
 
+/// Standard deviation (0 to 1) of the pixels of an icon cell around the digit band, inside
+/// the icon. The cooldown veil is flat and the artwork is not, so this falls when an
+/// ability goes on cooldown whatever the artwork looks like and however much near-white
+/// it contains.
+#[must_use]
+pub fn cell_flatness(frame: &[u8], candidate: usize, cell: usize) -> f32 {
+    let mut values = Vec::with_capacity(FLAT_ROWS.len() * FLAT_COLS.len());
+    for y in FLAT_ROWS {
+        let start = (candidate * CELL + y) * FRAME_W + cell * CELL;
+        values.extend(
+            frame[start + FLAT_COLS.start..start + FLAT_COLS.end]
+                .iter()
+                .map(|&v| f32::from(v)),
+        );
+    }
+    let mean = values.iter().sum::<f32>() / values.len() as f32;
+    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
+    variance.sqrt() / 255.0
+}
+
 /// Values read for one second of video: the digit ratio of each of the six icons (Q, W,
-/// E, R, summoner spell one, summoner spell two), then the brightness of the two
-/// summoner-spell icons.
+/// E, R, summoner spell one, summoner spell two), the brightness of the two summoner-spell
+/// icons, then the strict digit ratio and the flatness of the ultimate.
 pub type Row = [f32; COLUMNS];
 
 /// For each candidate scale, then each second of the recording, the [`Row`] read.
@@ -181,12 +220,15 @@ pub fn extract_digit_ratios(
     let mut out: Vec<Vec<Row>> = vec![Vec::new(); scales.len()];
     while read_frame(&mut stdout, &mut frame)? {
         for (candidate, series) in out.iter_mut().enumerate() {
-            series.push(std::array::from_fn(|column| {
-                if column < ICONS {
-                    digit_ratio(&frame, candidate, column)
-                } else {
-                    cell_brightness(&frame, candidate, SUMMONER_CELLS[column - ICONS])
+            series.push(std::array::from_fn(|column| match column {
+                c if c < ICONS => digit_ratio(&frame, candidate, c),
+                c if c < ICONS + SUMMONER_CELLS.len() => {
+                    cell_brightness(&frame, candidate, SUMMONER_CELLS[c - ICONS])
                 }
+                c if c == ICONS + SUMMONER_CELLS.len() => {
+                    strong_digit_ratio(&frame, candidate, ULTIMATE_CELL)
+                }
+                _ => cell_flatness(&frame, candidate, ULTIMATE_CELL),
             }));
         }
     }
@@ -308,9 +350,51 @@ mod tests {
     }
 
     #[test]
-    fn a_row_has_six_digit_ratios_then_two_brightnesses() {
-        assert_eq!(COLUMNS, 8);
+    fn a_row_has_six_digit_ratios_two_brightnesses_then_the_strict_ratio_and_flatness() {
+        assert_eq!(COLUMNS, 10);
         assert_eq!(SUMMONER_CELLS, [4, 5]);
+    }
+
+    #[test]
+    fn flatness_is_zero_for_a_veil_and_high_for_artwork_and_ignores_the_digit_band() {
+        let mut f = vec![60u8; frame_bytes(1)];
+        assert!(cell_flatness(&f, 0, ULTIMATE_CELL).abs() < 1e-6);
+        // digits in the band do not count
+        put_digits(&mut f, 0, ULTIMATE_CELL);
+        assert!(cell_flatness(&f, 0, ULTIMATE_CELL).abs() < 1e-6);
+        // artwork above the band does
+        for x in 4..16 {
+            f[5 * FRAME_W + ULTIMATE_CELL * CELL + x] = 255;
+        }
+        assert!(cell_flatness(&f, 0, ULTIMATE_CELL) > 0.1);
+        assert!(cell_flatness(&f, 0, 0).abs() < 1e-6, "another cell");
+    }
+
+    #[test]
+    fn artwork_below_pure_white_counts_for_the_loose_ratio_only() {
+        let mut f = vec![20u8; frame_bytes(1)];
+        for y in BAND_ROWS {
+            for x in 8..24 {
+                f[y * FRAME_W + ULTIMATE_CELL * CELL + x] = 235;
+            }
+        }
+        assert!(
+            digit_ratio(&f, 0, ULTIMATE_CELL) > 0.5,
+            "loose: art looks like digits"
+        );
+        assert!(
+            strong_digit_ratio(&f, 0, ULTIMATE_CELL).abs() < f32::EPSILON,
+            "strict: not pure white"
+        );
+        for y in BAND_ROWS {
+            for x in 8..24 {
+                f[y * FRAME_W + ULTIMATE_CELL * CELL + x] = 255;
+            }
+        }
+        assert!(
+            strong_digit_ratio(&f, 0, ULTIMATE_CELL) > 0.5,
+            "real digits pass"
+        );
     }
 
     #[test]

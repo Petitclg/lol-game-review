@@ -56,6 +56,10 @@ pub struct UltimateRecord {
     /// there.
     #[serde(default)]
     pub summoner_casts: Option<[Vec<f64>; 2]>,
+    /// Version of the detection that produced this record ([`ANALYSIS_VERSION`]); a
+    /// record from an older detection is analysed again when the video is still there.
+    #[serde(default)]
+    pub analysis_version: u32,
 }
 
 impl UltimateRecord {
@@ -174,6 +178,7 @@ impl SessionStore {
             hud_scale: None,
             casts: legacy,
             summoner_casts: None,
+            analysis_version: 0,
         }))
     }
 
@@ -484,6 +489,7 @@ mod tests {
             hud_scale: Some(1.0),
             casts: vec![482.5, 603.0],
             summoner_casts: Some([vec![120.5], vec![300.0, 640.0]]),
+            analysis_version: crate::ultimate::ANALYSIS_VERSION,
         };
         store.save_ultimates("a", &rec).unwrap();
         assert_eq!(store.load_ultimates("a").unwrap(), Some(rec));
@@ -492,6 +498,7 @@ mod tests {
             hud_scale: None,
             casts: vec![],
             summoner_casts: None,
+            analysis_version: 0,
         };
         store.save_ultimates("a", &none).unwrap();
         assert_eq!(store.load_ultimates("a").unwrap(), Some(none));
@@ -509,6 +516,7 @@ mod tests {
         .unwrap();
         let rec = store.load_ultimates("a").unwrap().unwrap();
         assert_eq!(rec.summoner_casts, None);
+        assert_eq!(rec.analysis_version, 0, "an old record carries no version");
         let casts = rec.to_casts();
         assert_eq!(casts.ultimate, [10.0]);
         assert!(casts.summoner.iter().all(Vec::is_empty));

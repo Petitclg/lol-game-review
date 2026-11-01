@@ -208,6 +208,7 @@ mod tests {
                     hud_scale: Some(1.0),
                     casts: vec![],
                     summoner_casts: Some([vec![], vec![]]),
+                    analysis_version: lgr_core::ultimate::ANALYSIS_VERSION,
                 },
             )
             .unwrap();

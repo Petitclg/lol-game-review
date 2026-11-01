@@ -4,7 +4,7 @@ use lgr_core::clips::ClipConfig;
 use lgr_core::loading::{anchor_from_loading_end, frame_diffs, loading_end_secs};
 use lgr_core::session::{build_clips_with, Casts, Clip, Session};
 use lgr_core::store::{SessionStore, StoreError, UltimateRecord};
-use lgr_core::ultimate::detect_ultimates;
+use lgr_core::ultimate::{detect_ultimates, ANALYSIS_VERSION};
 use serde::Serialize;
 use std::path::Path;
 
@@ -148,6 +148,12 @@ fn verified_session(
     session
 }
 
+/// Whether a saved analysis was made by the current detection (including the summoner
+/// spells); older ones are analysed again when the video is still there.
+fn is_current(record: &UltimateRecord) -> bool {
+    record.summoner_casts.is_some() && record.analysis_version >= ANALYSIS_VERSION
+}
+
 /// Casts of a session read from its recorded HUD, in game time. The outcome is cached
 /// (including "interface not recognised"), so the video is analysed once; a failed
 /// analysis is not cached and is retried next time.
@@ -157,7 +163,7 @@ fn verified_session(
 /// ultimate clip files cut from the old times are removed so they are cut again.
 fn hud_casts(store: &SessionStore, detector: &dyn UltimateDetector, session: &Session) -> Casts {
     let cached = store.load_ultimates(&session.id).ok().flatten();
-    if let Some(record) = cached.as_ref().filter(|r| r.summoner_casts.is_some()) {
+    if let Some(record) = cached.as_ref().filter(|r| is_current(r)) {
         return record.to_casts();
     }
     let fallback = cached
@@ -186,12 +192,14 @@ fn hud_casts(store: &SessionStore, detector: &dyn UltimateDetector, session: &Se
             hud_scale: Some(hud_scale),
             casts: to_game_time(casts_video_secs),
             summoner_casts: Some([to_game_time(first), to_game_time(second)]),
+            analysis_version: ANALYSIS_VERSION,
         },
         Ok(UltimateOutcome::Unrecognized) => UltimateRecord {
             recognized: false,
             hud_scale: None,
             casts: Vec::new(),
             summoner_casts: Some([Vec::new(), Vec::new()]),
+            analysis_version: ANALYSIS_VERSION,
         },
         Err(_) => return fallback,
     };
@@ -842,6 +850,7 @@ mod tests {
                     hud_scale: Some(1.1),
                     casts: vec![150.0],
                     summoner_casts: None,
+                    analysis_version: 0,
                 },
             )
             .unwrap();
@@ -876,6 +885,7 @@ mod tests {
                     hud_scale: Some(1.0),
                     casts: vec![150.0],
                     summoner_casts: None,
+                    analysis_version: 0,
                 },
             )
             .unwrap();
@@ -889,6 +899,40 @@ mod tests {
     }
 
     #[test]
+    fn an_analysis_from_an_older_detection_is_redone_even_with_summoner_casts() {
+        // saved by v0.1.8 / v0.1.9: it has summoner spells but the loose ultimate detection
+        let (_d, store) = setup(true);
+        store
+            .save_ultimates(
+                "s",
+                &UltimateRecord {
+                    recognized: true,
+                    hud_scale: Some(1.0),
+                    casts: vec![150.0, 200.0],
+                    summoner_casts: Some([vec![], vec![]]),
+                    analysis_version: 0,
+                },
+            )
+            .unwrap();
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        let det = detector(&[300.0], false);
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert_eq!(det.calls.get(), 1);
+        let record = store.load_ultimates("s").unwrap().unwrap();
+        assert_eq!(record.casts, [300.0]);
+        assert_eq!(record.analysis_version, ANALYSIS_VERSION);
+    }
+
+    #[test]
+    fn a_current_analysis_is_not_redone() {
+        let (_d, store) = setup(true);
+        let det = detector(&[300.0], false);
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert_eq!(det.calls.get(), 1);
+    }
+
+    #[test]
     fn an_old_unrecognised_result_is_analysed_again_with_the_current_calibration() {
         let (_d, store) = setup(true);
         store
@@ -899,6 +943,7 @@ mod tests {
                     hud_scale: None,
                     casts: vec![],
                     summoner_casts: None,
+                    analysis_version: 0,
                 },
             )
             .unwrap();
@@ -919,6 +964,7 @@ mod tests {
             hud_scale: Some(1.0),
             casts: vec![150.0],
             summoner_casts: None,
+            analysis_version: 0,
         };
         store.save_ultimates("s", &old).unwrap();
         let det = detector(&[999.0], false);
@@ -968,6 +1014,7 @@ mod tests {
                     hud_scale: Some(1.0),
                     casts: vec![150.0],
                     summoner_casts: None,
+                    analysis_version: 0,
                 },
             )
             .unwrap();

@@ -5,6 +5,12 @@
 //! "digits visible". The input is, for each second of video, the fraction of near-white
 //! pixels in the centre of the icon.
 
+/// Version of the HUD detection. Raise it whenever a change of the detection can alter
+/// the casts found in a recording: saved analyses with a lower version are redone.
+/// 2: the ultimate is read by the cooldown veil over its icon (not by the white of the
+/// artwork), summoner spells by the brightness of their icon.
+pub const ANALYSIS_VERSION: u32 = 2;
+
 /// Fraction of bright pixels above which digits are considered visible.
 const ON_THRESHOLD: f32 = 0.03;
 /// Fraction below which digits are considered gone.
@@ -63,24 +69,29 @@ pub fn detect_casts(digit_ratio: &[f32]) -> Vec<f64> {
 pub const ULTIMATE_ICON: usize = 3;
 /// Columns of a row holding the brightness of the two summoner-spell icons.
 pub const SUMMONER_BRIGHTNESS: [usize; 2] = [6, 7];
-/// Values read per second of video: a digit ratio for each of the six icons, then the
-/// brightness of the two summoner-spell icons.
-pub const HUD_COLUMNS: usize = 8;
+/// Column of a row holding the strict digit ratio of the ultimate icon.
+pub const ULTIMATE_STRONG: usize = 8;
+/// Column of a row holding the flatness of the ultimate icon.
+pub const ULTIMATE_FLATNESS: usize = 9;
+/// Values read per second of video: a digit ratio for each of the six icons, the
+/// brightness of the two summoner-spell icons, then the strict digit ratio and the
+/// flatness of the ultimate.
+pub const HUD_COLUMNS: usize = 10;
 /// What is read from the HUD for one second of video.
 pub type HudRow = [f32; HUD_COLUMNS];
 
-/// A summoner-spell icon is covered by the cooldown overlay when it is darker than this
-/// fraction of its ready brightness.
-const COOLDOWN_BRIGHTNESS: f32 = 0.92;
-/// The ready brightness is this percentile of the icon's brightness over the game.
+/// An icon is under the cooldown veil when its measure falls below this fraction of its
+/// ready level.
+const COOLDOWN_VEIL: f32 = 0.92;
+/// The ready level is this percentile of the measure over the game.
 const READY_PERCENTILE: f64 = 0.9;
-/// The darkest level is this percentile: low enough to see a single cooldown, high
+/// The lowest level is this percentile: low enough to see a single cooldown, high
 /// enough to ignore a stray frame.
 const DARK_PERCENTILE: f64 = 0.01;
-/// The icon must have been at least this much darker (relative to the ready brightness)
-/// at some point, otherwise it never went on cooldown.
+/// The measure must have fallen at least this much (relative to the ready level) at some
+/// point, otherwise the icon never visibly went on cooldown.
 const MIN_CONTRAST: f32 = 0.08;
-/// Consecutive dark samples that confirm a cooldown, and bright ones that end it.
+/// Consecutive samples under the veil that confirm a cooldown, and clear ones that end it.
 const DARK_SAMPLES: usize = 2;
 const BRIGHT_SAMPLES: usize = 3;
 /// A summoner-spell cooldown darkens the icon for at least this many seconds. Shorter
@@ -88,62 +99,120 @@ const BRIGHT_SAMPLES: usize = 3;
 /// cooldown is too short to matter.
 const MIN_SUMMONER_COOLDOWN_SECS: usize = 90;
 
-/// Estimated cast times, in video seconds, of a summoner spell, from the brightness of
-/// its icon for each second of video.
+/// Periods, as `(start, end)` in seconds of video, during which `measure` stays under the
+/// cooldown veil for at least `min_len` seconds. Starts at the very beginning of the
+/// game (a cooldown already running) are left out. `None` when the measure never varies
+/// enough to tell a veil from a ready icon, so the caller can use another signal.
 ///
-/// The ready icon of some spells (Flash) is itself full of bright streaks, so white
-/// cooldown digits cannot be told from the art; the dark overlay that covers the icon
-/// during the cooldown can. `from` is the second at which the game starts (the loading
-/// screen before it is not the HUD); a cooldown already running then is not a cast.
-#[must_use]
-pub fn detect_summoner_casts(brightness: &[f32], from: usize) -> Vec<f64> {
-    let series = brightness.get(from..).unwrap_or_default();
-    if series.len() < MIN_SUMMONER_COOLDOWN_SECS {
-        return Vec::new();
+/// `from` is the second at which the game starts: the loading screen before it is not
+/// the HUD and must not set the ready level.
+fn veil_episodes(measure: &[f32], from: usize, min_len: usize) -> Option<Vec<(usize, usize)>> {
+    let series = measure.get(from..).unwrap_or_default();
+    if series.len() < min_len {
+        return None;
     }
     let mut sorted = series.to_vec();
     sorted.sort_by(f32::total_cmp);
     let at = |q: f64| sorted[((sorted.len() - 1) as f64 * q) as usize];
     let (ready, low) = (at(READY_PERCENTILE), at(DARK_PERCENTILE));
     if ready <= 0.0 || ready - low < MIN_CONTRAST * ready {
-        return Vec::new();
+        return None;
     }
-    let dark = |v: f32| v < COOLDOWN_BRIGHTNESS * ready;
+    let veiled = |v: f32| v < COOLDOWN_VEIL * ready;
 
-    let mut casts = Vec::new();
-    let mut episode_start: Option<usize> = None;
-    let (mut run_dark, mut run_bright) = (0usize, 0usize);
+    let mut episodes = Vec::new();
+    let mut open: Option<usize> = None;
+    let (mut run_veiled, mut run_clear) = (0usize, 0usize);
+    let mut close = |start: usize, end: usize| {
+        if start > 0 && end - start >= min_len {
+            episodes.push((from + start, from + end));
+        }
+    };
     for (t, &v) in series.iter().enumerate() {
-        match episode_start {
+        match open {
             None => {
-                run_dark = if dark(v) { run_dark + 1 } else { 0 };
-                if run_dark >= DARK_SAMPLES {
-                    episode_start = Some(t + 1 - DARK_SAMPLES);
-                    run_bright = 0;
+                run_veiled = if veiled(v) { run_veiled + 1 } else { 0 };
+                if run_veiled >= DARK_SAMPLES {
+                    open = Some(t + 1 - DARK_SAMPLES);
+                    run_clear = 0;
                 }
             }
             Some(start) => {
-                run_bright = if dark(v) { 0 } else { run_bright + 1 };
-                if run_bright >= BRIGHT_SAMPLES {
-                    let end = t + 1 - BRIGHT_SAMPLES;
-                    push_cooldown(&mut casts, start, end, from);
-                    episode_start = None;
-                    run_dark = 0;
+                run_clear = if veiled(v) { 0 } else { run_clear + 1 };
+                if run_clear >= BRIGHT_SAMPLES {
+                    close(start, t + 1 - BRIGHT_SAMPLES);
+                    open = None;
+                    run_veiled = 0;
                 }
             }
         }
     }
-    if let Some(start) = episode_start {
-        push_cooldown(&mut casts, start, series.len(), from);
+    if let Some(start) = open {
+        close(start, series.len());
     }
-    casts
+    Some(episodes)
 }
 
-fn push_cooldown(casts: &mut Vec<f64>, start: usize, end: usize, from: usize) {
-    // A cooldown already running when the game starts was not cast on the recording.
-    if start > 0 && end - start >= MIN_SUMMONER_COOLDOWN_SECS {
-        casts.push((from + start) as f64 - 0.5);
-    }
+/// Estimated cast times, in video seconds, of a summoner spell, from the brightness of
+/// its icon for each second of video.
+///
+/// The ready icon of some spells (Flash) is itself full of bright streaks, so white
+/// cooldown digits cannot be told from the art; the dark overlay that covers the icon
+/// during the cooldown can. `from` is the second at which the game starts.
+#[must_use]
+pub fn detect_summoner_casts(brightness: &[f32], from: usize) -> Vec<f64> {
+    veil_episodes(brightness, from, MIN_SUMMONER_COOLDOWN_SECS)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(start, _)| start as f64 - 0.5)
+        .collect()
+}
+
+/// An ultimate cooldown veils its icon for at least this many seconds (the veil recedes
+/// as the cooldown runs out, so it is shorter than the cooldown itself: about 35 s of a
+/// 90 s cooldown). Shorter changes are blinks of the icon.
+const MIN_ULTIMATE_VEIL_SECS: usize = 15;
+/// A veil only counts as a cast when cooldown digits show on the icon at its start: an
+/// icon greyed for lack of mana has no digits.
+const DIGITS_CONFIRM: f32 = 0.0136;
+const CONFIRM_WINDOW: usize = 4;
+const CONFIRM_MIN_SAMPLES: usize = 2;
+
+/// Estimated ultimate cast times in video seconds.
+///
+/// The cooldown puts a flat veil over the icon, which falls on the flatness of its
+/// artwork (`flatness`, measured outside the digits), whatever the artwork looks like.
+/// Counting white digits alone does not work for every champion: the ready icon of some
+/// (Nocturne) is itself full of near-white pixels, which sat in the hysteresis band of
+/// the digit detector, so casts were missed and others invented. The veil is confirmed
+/// by strict white digits (`strong_digits`) at its start.
+///
+/// When the flatness never varies (a champion whose artwork is as flat as the veil) the
+/// digits alone (`loose_digits`) are read instead, as before. `from` is the second at
+/// which the game starts.
+#[must_use]
+pub fn detect_ultimate_casts(
+    flatness: &[f32],
+    strong_digits: &[f32],
+    loose_digits: &[f32],
+    from: usize,
+) -> Vec<f64> {
+    let Some(episodes) = veil_episodes(flatness, from, MIN_ULTIMATE_VEIL_SECS) else {
+        return detect_casts(loose_digits);
+    };
+    episodes
+        .into_iter()
+        .filter(|&(start, _)| {
+            let window = strong_digits.get(start..).unwrap_or_default();
+            window
+                .iter()
+                .take(CONFIRM_WINDOW)
+                .filter(|&&v| v >= DIGITS_CONFIRM)
+                .count()
+                >= CONFIRM_MIN_SAMPLES
+        })
+        .map(|(start, _)| start as f64 - 0.5)
+        .collect()
 }
 
 /// A calibration needs at least this many cooldown episodes on Q, W and E combined.
@@ -271,7 +340,12 @@ pub fn detect_ultimates(
     let column = |c: usize| -> Vec<f32> { rows.iter().map(|r| r[c]).collect() };
     Some(UltimateDetection {
         candidate,
-        casts_video_secs: detect_casts(&column(ULTIMATE_ICON)),
+        casts_video_secs: detect_ultimate_casts(
+            &column(ULTIMATE_FLATNESS),
+            &column(ULTIMATE_STRONG),
+            &column(ULTIMATE_ICON),
+            game_start_secs,
+        ),
         summoner_casts_video_secs: SUMMONER_BRIGHTNESS
             .map(|c| detect_summoner_casts(&column(c), game_start_secs)),
     })
@@ -421,23 +495,168 @@ mod tests {
         assert!(detect_ultimates(&[plausible(0)]).is_none());
     }
 
+    /// Marks `row`'s ultimate as under a cooldown veil with digits at its start.
+    fn cast_ultimate(rows: &mut [HudRow], start: usize, veil_len: usize) {
+        for row in rows.iter_mut().skip(start).take(veil_len) {
+            row[ULTIMATE_FLATNESS] = 0.17;
+        }
+        for row in rows.iter_mut().skip(start).take(6) {
+            row[ULTIMATE_STRONG] = 0.04;
+        }
+    }
+
+    /// Rows whose ultimate icon is ready (flatness 0.20, no digits) everywhere.
+    fn ready_ultimate(mut rows: Vec<HudRow>) -> Vec<HudRow> {
+        for row in &mut rows {
+            row[ULTIMATE_FLATNESS] = 0.20;
+            row[ULTIMATE_STRONG] = 0.006;
+        }
+        rows
+    }
+
     #[test]
     fn ultimate_casts_are_read_from_the_recognised_geometry_only() {
-        let mut right = plausible(6);
-        for row in right.iter_mut().skip(100).take(60) {
-            row[ULTIMATE_ICON] = 0.08;
-        }
-        for row in right.iter_mut().skip(300).take(60) {
-            row[ULTIMATE_ICON] = 0.08;
-        }
+        let mut right = ready_ultimate(plausible(6));
+        cast_ultimate(&mut right, 100, 35);
+        cast_ultimate(&mut right, 300, 35);
         // the wrong geometry also "sees" an ultimate, which must be ignored
-        let mut wrong = plausible(0);
-        for row in wrong.iter_mut().skip(50).take(60) {
-            row[ULTIMATE_ICON] = 0.08;
-        }
+        let mut wrong = ready_ultimate(plausible(0));
+        cast_ultimate(&mut wrong, 50, 35);
         let d = detect_ultimates(&[wrong, right]).unwrap();
         assert_eq!(d.candidate, 1);
         assert_eq!(d.casts_video_secs, [99.5, 299.5]);
+    }
+
+    /// Flatness of the ultimate icon: ready (0.20) except during each `(start, len)`
+    /// veil (0.17).
+    fn flatness(len: usize, veils: &[(usize, usize)]) -> Vec<f32> {
+        let mut out = vec![0.20; len];
+        for &(start, n) in veils {
+            for v in out.iter_mut().skip(start).take(n) {
+                *v = 0.17;
+            }
+        }
+        out
+    }
+
+    /// Strict digits: 0.04 for 6 seconds from each cast, 0.006 (the artwork) otherwise.
+    fn digits(len: usize, casts: &[usize]) -> Vec<f32> {
+        let mut out = vec![0.006; len];
+        for &c in casts {
+            for v in out.iter_mut().skip(c).take(6) {
+                *v = 0.04;
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_cooldown_is_a_cast_whatever_the_white_of_the_artwork() {
+        // Nocturne's ready icon has near-white artwork: its digit ratio never fell back
+        // under the hysteresis threshold, so casts were missed and others invented.
+        let casts = [100, 300, 480, 700];
+        let veils: Vec<_> = casts.iter().map(|&c| (c, 35)).collect();
+        let bright_art = vec![0.04; 1000];
+        let found = detect_ultimate_casts(
+            &flatness(1000, &veils),
+            &digits(1000, &casts),
+            &bright_art,
+            0,
+        );
+        assert_eq!(found, [99.5, 299.5, 479.5, 699.5]);
+    }
+
+    #[test]
+    fn a_veil_without_digits_is_not_a_cast() {
+        // an icon greyed for lack of mana: veiled, but no cooldown digits
+        let found = detect_ultimate_casts(
+            &flatness(600, &[(100, 60), (300, 40)]),
+            &digits(600, &[300]),
+            &[0.0; 600],
+            0,
+        );
+        assert_eq!(found, [299.5]);
+    }
+
+    #[test]
+    fn digits_that_come_late_do_not_confirm_a_veil() {
+        let mut strong = vec![0.006; 400];
+        for v in strong.iter_mut().skip(110).take(6) {
+            *v = 0.04;
+        }
+        let found = detect_ultimate_casts(&flatness(400, &[(100, 35)]), &strong, &[0.0; 400], 0);
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn a_blink_of_the_icon_is_not_a_cast() {
+        let found = detect_ultimate_casts(
+            &flatness(500, &[(100, 5), (300, 14), (400, 15)]),
+            &digits(500, &[100, 300, 400]),
+            &[0.0; 500],
+            0,
+        );
+        assert_eq!(found, [399.5], "only a veil of 15 s or more counts");
+    }
+
+    #[test]
+    fn a_veil_already_there_when_the_game_starts_is_not_a_cast() {
+        let found = detect_ultimate_casts(
+            &flatness(400, &[(0, 40), (200, 35)]),
+            &digits(400, &[0, 200]),
+            &[0.0; 400],
+            0,
+        );
+        assert_eq!(found, [199.5]);
+    }
+
+    #[test]
+    fn the_loading_screen_does_not_set_the_ready_level() {
+        // 70 s of loading screen, flatter than the HUD, then the game
+        let mut flat = flatness(500, &[(70, 40), (300, 35)]);
+        for v in flat.iter_mut().take(70) {
+            *v = 0.35;
+        }
+        let found = detect_ultimate_casts(&flat, &digits(500, &[70, 300]), &[0.0; 500], 70);
+        assert_eq!(
+            found,
+            [299.5],
+            "the veil starting with the game is a running cooldown"
+        );
+    }
+
+    #[test]
+    fn a_cast_right_after_the_cooldown_ends_is_a_second_cast() {
+        let found = detect_ultimate_casts(
+            &flatness(500, &[(100, 35), (190, 35)]),
+            &digits(500, &[100, 190]),
+            &[0.0; 500],
+            0,
+        );
+        assert_eq!(found, [99.5, 189.5]);
+    }
+
+    #[test]
+    fn an_icon_whose_flatness_never_changes_falls_back_to_its_digits() {
+        let flat = vec![0.20; 600];
+        let mut loose = vec![0.0; 600];
+        for v in loose.iter_mut().skip(100).take(60) {
+            *v = 0.08;
+        }
+        assert_eq!(
+            detect_ultimate_casts(&flat, &[0.0; 600], &loose, 0),
+            [99.5],
+            "as before the flatness was read"
+        );
+    }
+
+    #[test]
+    fn too_short_a_recording_has_no_ultimate_cast_from_the_veil() {
+        assert!(detect_ultimate_casts(&[], &[], &[], 0).is_empty());
+        assert!(
+            detect_ultimate_casts(&flatness(10, &[(2, 5)]), &digits(10, &[2]), &[0.0; 10], 0)
+                .is_empty()
+        );
     }
 
     #[test]

@@ -55,6 +55,29 @@ impl Hud {
             })
             .collect()
     }
+
+    /// Ready-state artwork of the ultimate, above and below the digit band: it is
+    /// replaced by the flat cooldown veil while the ultimate recharges.
+    fn artwork(&self) -> Vec<(i64, i64, i64, i64)> {
+        let cell_left = self.width / 2.0 - 3.5 * self.pitch() + 3.0 * self.pitch();
+        let cell_top = self.center_y() - self.icon_h() / 2.0;
+        let (ux, uy) = (self.pitch() / 32.0, self.icon_h() / 32.0);
+        [
+            (5.0, 3.0, 9.0, 7.0),
+            (18.0, 3.0, 9.0, 7.0),
+            (6.0, 25.0, 20.0, 4.0),
+        ]
+        .into_iter()
+        .map(|(x, y, w, h)| {
+            (
+                (cell_left + x * ux).round() as i64,
+                (cell_top + y * uy).round() as i64,
+                (w * ux).round().max(1.0) as i64,
+                (h * uy).round().max(1.0) as i64,
+            )
+        })
+        .collect()
+    }
 }
 
 /// Spans during which icon `k` shows digits: Q, W and E cycle constantly, R follows
@@ -82,6 +105,16 @@ fn make_video(ffmpeg: &Path, out: &Path, hud: &Hud, with_hud: bool) {
                     ));
                 }
             }
+        }
+        let veil = ULTIMATE_SPANS
+            .iter()
+            .map(|(a, b)| format!("-between(t,{a},{b})"))
+            .collect::<Vec<_>>()
+            .concat();
+        for (x, y, w, h) in hud.artwork() {
+            filters.push(format!(
+                "drawbox=x={x}:y={y}:w={w}:h={h}:color=0xC0C0C0:t=fill:enable='1{veil}'"
+            ));
         }
     }
     let vf = if filters.is_empty() {

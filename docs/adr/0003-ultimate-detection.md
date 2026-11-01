@@ -18,7 +18,7 @@ La politique Riot interdit par ailleurs de suivre les cooldowns d'ultimates **en
 Détecter **les ultimates du joueur local** dans la vidéo déjà enregistrée. Quand un sort part en cooldown, des chiffres blancs (secondes restantes) apparaissent au centre de son icône et y restent jusqu'à ce qu'il soit de nouveau prêt. Un lancement est le front montant de « chiffres visibles ».
 
 - **Extraction** (`lgr-media::hud`) : ffmpeg ne décode que les images clés (une par seconde, voir ADR 0002) avec `-skip_frame nokey -threads 2`, découpe la rangée des quatre icônes (géométrie en unités de hauteur d'écran, donc indépendante de la résolution) et sort des images grises brutes. Une partie de 16 minutes s'analyse en environ 18 s à priorité réduite, sans fenêtre.
-- **Détection** (`lgr-core::ultimate`) : fonction pure à hystérésis (2 échantillons pour allumer, 3 pour éteindre, seuils 0,03 / 0,01), car le nombre de chiffres change pendant le cooldown et fait osciller le ratio. Des chiffres déjà présents au début de l'enregistrement ne sont pas un lancement.
+- **Détection** (`lgr-core::ultimate`) : voir « Ultimates : le voile de cooldown » ci-dessous. La première version, à hystérésis sur les chiffres (2 échantillons pour allumer, 3 pour éteindre, seuils 0,03 / 0,01), a été remplacée le 2026-11-02 : elle ne tenait pas compte des icônes dont l'illustration est presque blanche. Des chiffres déjà présents au début de l'enregistrement ne sont pas un lancement.
 - **Cache** : le résultat est écrit dans `ultimates.json` (temps de jeu), la vidéo n'est analysée qu'une fois ; un échec n'est pas mis en cache et sera retenté.
 - **Clips** : fenêtre de 5 s avant et 11 s après (l'effet d'un ultimate dure plus qu'un kill), thème `ultimate`, rôle `caster`.
 
@@ -53,6 +53,19 @@ Les sorts d'invocateur D et F sont lus avec la même géométrie (icônes de 0,0
 Quel emplacement porte le Flash ? Les identifiants de sorts sont enregistrés dans l'ordre (`spell_keys`) : le Flash est l'emplacement où se trouve `SummonerFlash`. Sans les deux identifiants, l'emplacement est inconnu et aucun clip Flash n'est produit.
 
 **Validation sur de vraies parties.** Sur la partie de Cho'Gath, le Flash est détecté à 226,5 s de vidéo et la vidéo affiche « 227 » (secondes restantes) à 300 s : cooldown de 300,5 s, celui du Flash. Les écarts entre lancers sur 3 parties (270 à 400 s) sont cohérents avec ce cooldown. Dans le clip généré, l'icône D passe de « prête » à « 300 » à 6 s du début, comme prévu.
+
+## Ultimates : le voile de cooldown (2026-11-02)
+
+**Problème constaté sur une partie de Nocturne** : des ultimates manquaient et certains clips n'en étaient pas. L'illustration de l'icône R prête de Nocturne a un fond quasi blanc (≥ 225 sur 255) : le ratio de « chiffres » restait entre les seuils de l'hystérésis (0,03 / 0,01), donc aucune fin de cooldown n'était jamais vue et les lancers suivants étaient perdus ; un changement d'illustration provoquait en plus de faux lancers (par exemple à 1134 s, en plein cooldown). La luminosité ne marche pas non plus pour R : le voile de Nocturne est bleu, aussi clair que l'illustration.
+
+**Décision** : un ultimate lancé est un **voile plat** sur l'icône, confirmé par des chiffres.
+
+- *Voile* : l'écart-type des pixels de l'icône hors de la bande des chiffres (lignes 3 à 10 et 25 à 29, colonnes 4 à 27 de la cellule 32×32) tombe d'environ 55 (prêt) à environ 44 (cooldown), quelle que soit l'illustration. Même détection que pour le Flash (`veil_episodes`, partagée) : niveau « prêt » au 90e percentile après le début de la partie, voile sous 92 % de ce niveau, au moins 8 % d'écart, 2 échantillons pour confirmer, 3 pour terminer. Un épisode dure au moins 15 s (le voile est visible 30 à 39 s sur un cooldown de plus de 80 s ; les éclairs d'un ou deux échantillons sont écartés).
+- *Confirmation* : des chiffres **stricts** (blanc ≥ 240, `strong_digit_ratio`) doivent apparaître dans au moins 2 des 4 premiers échantillons de l'épisode, avec un seuil de 0,0136 (3 pixels sur 220). Une icône grisée faute de mana a un voile mais pas de chiffres : elle n'est pas comptée.
+- *Repli* : si l'écart-type ne change jamais (illustration plate), on retombe sur l'ancienne détection par chiffres.
+- *Version d'analyse* : `ANALYSIS_VERSION = 2` est stocké dans `ultimates.json` (`analysis_version`) ; les analyses plus anciennes sont refaites à la prochaine génération si la vidéo existe.
+
+**Validation.** Sur l'enregistrement Qiyana (981 s) : exactement 7 lancers (99,5 ; 258,5 ; 406,5 ; 487,5 ; 630,5 ; 721,5 ; 916,5 s), sans le faux lancer de 283,5 s que donnait la variante « chiffres stricts seuls ». Sur les clips Nocturne, l'écart-type chute exactement aux images de lancer (475, 883, 1058, 1355, 1613, 1791 s). La vidéo de Nocturne ayant été supprimée, le détecteur n'a pas pu y être relancé de bout en bout. Les tests synthétiques dessinent maintenant une illustration sur R qui disparaît pendant le cooldown.
 
 ## Limites
 
