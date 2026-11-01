@@ -236,6 +236,10 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     .getStatus()
     .then((status) => store.dispatch({ type: "statusChanged", status }))
     .catch(() => undefined);
+  backend
+    .getVersion()
+    .then((version) => header.setVersion(version))
+    .catch(() => undefined);
 
   void refresh();
 

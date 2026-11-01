@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createMockBackend } from "./mock";
@@ -28,6 +29,8 @@ export interface Backend {
   getUltimateStatus(sessionId: string): Promise<UltimateStatus>;
   onStatusChanged(cb: (status: Status) => void): Promise<Unlisten>;
   onClipsProgress(cb: (progress: ClipsProgress) => void): Promise<Unlisten>;
+  /** Version de l'application ; absente ou vide : rien n'est affiché. */
+  getVersion(): Promise<string>;
   /** URL lisible par <video>, ou null si le fichier n'est pas lisible (mode simulé). */
   videoSrc(path: string): string | null;
 }
@@ -60,6 +63,7 @@ function createTauriBackend(): Backend {
     setSettings: (settings) => invoke<Settings>("set_settings", { settings }),
     getStorageUsage: () => invoke<StorageUsage>("get_storage_usage"),
     getUltimateStatus: (sessionId) => invoke<UltimateStatus>("get_ultimate_status", { sessionId }),
+    getVersion: () => getVersion(),
     onStatusChanged: (cb) => listen<Status>("status-changed", (e) => cb(e.payload)),
     onClipsProgress: (cb) => listen<ClipsProgress>("clips-progress", (e) => cb(e.payload)),
     videoSrc: (path) => convertFileSrc(path),

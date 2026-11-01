@@ -27,6 +27,21 @@ describe("application (backend simulé, hors ligne)", () => {
     vi.unstubAllGlobals();
   });
 
+  it("affiche la version de l'application dans l'en-tête", async () => {
+    await until(() => root.querySelector<HTMLElement>(".app-version")?.hidden === false);
+    expect(root.querySelector(".app-version")?.textContent).toBe("v0.0.0-dev");
+  });
+
+  it("garde l'en-tête utilisable quand la version est indisponible", async () => {
+    app.destroy();
+    root.replaceChildren();
+    const backend = { ...createMockBackend(), getVersion: () => Promise.reject("indisponible") };
+    app = createApp(root, backend);
+    await until(() => root.querySelectorAll(".game-item").length > 0);
+    expect(root.querySelector<HTMLElement>(".app-version")?.hidden).toBe(true);
+    expect(root.querySelector(".app-title")?.textContent).toBe("LoL Game Review");
+  });
+
   it("liste les parties, génère les clips et navigue au clavier", async () => {
     await until(() => root.querySelectorAll(".game-item").length > 0);
     const items = [...root.querySelectorAll<HTMLButtonElement>(".game-item")];

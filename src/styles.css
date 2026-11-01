@@ -87,9 +87,19 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+.app-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
 .app-title {
   font-size: 1.15rem;
   letter-spacing: 0.02em;
+}
+
+.app-version {
+  font-size: 0.8rem;
 }
 
 .header-right {

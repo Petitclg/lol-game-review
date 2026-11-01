@@ -371,6 +371,9 @@ export function createMockBackend(): Backend {
 
   return {
     isMock: true,
+    async getVersion() {
+      return "0.0.0-dev";
+    },
     async getAccount(): Promise<Account | null> {
       await delay(250);
       if (offline) throw "Client League of Legends injoignable (mode simulé : ?mock=offline).";

@@ -72,6 +72,8 @@ interface Clip {
 | `get_storage_usage` | — | `StorageUsage` |
 | `get_ultimate_status` | `{ sessionId: string }` | `UltimateStatus` |
 
+La version de l'application n'est pas une commande : l'interface la lit avec `getVersion()` de `@tauri-apps/api/app` (permission `core:default`) et l'affiche à côté du titre (`vX.Y.Z`). Le backend simulé renvoie `0.0.0-dev`.
+
 ```ts
 interface Settings {
   deleteSourceAfterClips: boolean;  // supprimer la vidéo source une fois les clips générés (défaut : true)
