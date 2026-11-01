@@ -1,6 +1,6 @@
 //! Merges the LCU match history with locally recorded sessions.
 
-use lgr_core::store::SessionMeta;
+use lgr_core::store::{GameSummary, SessionMeta, SessionStore};
 use lgr_lcu::MatchSummary;
 use serde::Serialize;
 
@@ -20,6 +20,34 @@ pub struct GameEntry {
     pub clips_ready: bool,
     /// The source video still exists, so clips can be (re)generated.
     pub has_recording: bool,
+}
+
+impl GameEntry {
+    /// What is kept with the game once it has left the history of the client.
+    #[must_use]
+    pub fn summary(&self) -> GameSummary {
+        GameSummary {
+            game_id: self.game_id,
+            created_ms: self.created_ms,
+            duration_secs: self.duration_secs,
+            queue_id: self.queue_id,
+            champion_id: self.champion_id,
+            kills: self.kills,
+            deaths: self.deaths,
+            assists: self.assists,
+            win: self.win,
+        }
+    }
+}
+
+/// Saves the summary of every listed game that has a recorded session. Best effort: a
+/// game that cannot be written is simply not remembered.
+pub fn remember_games(store: &SessionStore, games: &[GameEntry]) {
+    for game in games {
+        if let Some(id) = &game.session_id {
+            let _ = store.save_game_summary(id, &game.summary());
+        }
+    }
 }
 
 /// A recording starts when the live API becomes available, i.e. after loading,
@@ -143,6 +171,37 @@ mod tests {
     fn a_session_with_its_video_reports_it() {
         let g = merge_games(&[game(1, 10 * MIN)], &[session("a", 11 * MIN, true, true)]);
         assert!(g[0].has_recording && g[0].clips_ready);
+    }
+
+    #[test]
+    fn the_summary_of_a_listed_game_is_saved_with_its_session_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store
+            .save_session(&lgr_core::session::Session {
+                id: "a".into(),
+                started_at_ms: 12 * MIN,
+                player_aliases: vec![],
+                video_anchor_secs: 0.0,
+                anchor_verified: false,
+                recording_file: None,
+                last_game_time_secs: 1800.0,
+                events: vec![],
+                snapshots: vec![],
+            })
+            .unwrap();
+        std::fs::write(store.recording_path("a").unwrap(), b"mkv").unwrap();
+        let sessions = store.list().unwrap();
+        let games = merge_games(&[game(1, 10 * MIN), game(2, 500 * MIN)], &sessions);
+        remember_games(&store, &games);
+        let kept = store.load_game_summary("a").unwrap().expect("saved");
+        assert_eq!((kept.game_id, kept.champion_id, kept.win), (1, 1, true));
+        assert_eq!(kept, games[0].summary());
+        assert_eq!(
+            store.list().unwrap().len(),
+            1,
+            "no folder for a game without a session"
+        );
     }
 
     #[test]

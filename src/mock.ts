@@ -5,6 +5,7 @@ import type {
   Account,
   Annotation,
   Annotations,
+  AnnotatedMoment,
   Clip,
   ClipsProgress,
   GameEntry,
@@ -425,6 +426,43 @@ export function createMockBackend(): Backend {
     async getAnnotations(sessionId) {
       await delay(80);
       return { ...(annotations.get(sessionId) ?? {}) };
+    },
+    async listAnnotatedMoments() {
+      await delay(100);
+      const out: AnnotatedMoment[] = [];
+      for (const [sessionId, all] of annotations) {
+        const game = games.find((g) => g.sessionId === sessionId) ?? null;
+        const clips = generated.get(sessionId) ?? [];
+        for (const [partId, a] of Object.entries(all)) {
+          const found = clips
+            .flatMap((clip) => (clip.parts ?? []).map((part) => ({ clip, part })))
+            .find(({ part }) => part.id === partId);
+          const [themeKey = "kill", time = "0"] = partId.split("-");
+          out.push({
+            sessionId,
+            partId,
+            theme: found?.part.theme ?? (themeKey as Theme),
+            label: found?.part.label ?? "",
+            gameTimeSecs: found?.part.gameTimeSecs ?? Number(time),
+            tags: a.tags,
+            note: a.note,
+            clipId: found?.clip.id ?? null,
+            file: found?.clip.file ?? null,
+            game: game && {
+              gameId: game.gameId,
+              createdMs: game.createdMs,
+              durationSecs: game.durationSecs,
+              queueId: game.queueId,
+              championId: game.championId,
+              kills: game.kills,
+              deaths: game.deaths,
+              assists: game.assists,
+              win: game.win,
+            },
+          });
+        }
+      }
+      return out.sort((a, b) => (b.game?.createdMs ?? 0) - (a.game?.createdMs ?? 0) || a.gameTimeSecs - b.gameTimeSecs);
     },
     async setAnnotation(sessionId, partId, tags, note) {
       await delay(60);

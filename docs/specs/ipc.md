@@ -63,6 +63,18 @@ interface ClipPart { id: string; theme: Theme; label: string; gameTimeSecs: numb
 
 /** Étiquettes (identifiants a-z, 0-9, _) et note libre d'un moment. */
 interface Annotation { tags: string[]; note: string }
+
+/** Résumé de l'historique du client, gardé avec la partie (`game.json`). */
+interface GameSummary { gameId: number; createdMs: number; durationSecs: number; queueId: number; championId: number; kills: number; deaths: number; assists: number; win: boolean }
+
+/** Un moment annoté, toutes parties confondues. */
+interface AnnotatedMoment {
+  sessionId: string; partId: string; theme: Theme;
+  label: string;            // libellé du moment si son clip est connu, "" sinon
+  gameTimeSecs: number; tags: string[]; note: string;
+  clipId: string | null; file: string | null;   // clip montrant le moment ; file null si le fichier n'existe plus
+  game: GameSummary | null; // null pour une partie jamais listée
+}
 ```
 
 ## Commandes
@@ -75,6 +87,7 @@ interface Annotation { tags: string[]; note: string }
 | `get_clips` | `{ sessionId: string }` | `Clip[]` (vide si non générés) |
 | `get_annotations` | `{ sessionId: string }` | `Record<string, Annotation>` par identifiant de moment (vide si aucune) |
 | `set_annotation` | `{ sessionId: string, partId: string, tags: string[], note: string }` | `Annotation` telle que gardée (étiquettes dédoublonnées, note sans blancs de bord) ; une annotation vide supprime celle du moment ; erreur si un identifiant, une étiquette (24 au plus) ou la note (2 000 caractères au plus) est invalide |
+| `list_annotated_moments` | — | `AnnotatedMoment[]` : tous les moments annotés de toutes les parties, du plus récent au plus ancien (voir [ADR 0008](../adr/0008-clip-merging-and-annotations.md)) |
 | `delete_recording` | `{ sessionId: string }` | `void` (supprime la vidéo source, garde les clips) |
 | `get_status` | — | `Status` |
 | `get_settings` | — | `Settings` |

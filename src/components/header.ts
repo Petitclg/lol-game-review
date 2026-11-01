@@ -12,6 +12,7 @@ export function statusLabel(status: Status | null): { text: string; kind: "idle"
 export interface Header {
   el: HTMLElement;
   settingsButton: HTMLButtonElement;
+  annotationsButton: HTMLButtonElement;
   update(state: State): void;
   /** Affiche la version de l'application à côté du titre ; vide ou absente : masquée. */
   setVersion(version: string | null | undefined): void;
@@ -24,7 +25,9 @@ export function versionLabel(version: string | null | undefined): string | null 
   return /^v/i.test(v) ? v : `v${v}`;
 }
 
-export function createHeader(handlers: { onOpenSettings?: () => void } = {}): Header {
+export function createHeader(
+  handlers: { onOpenSettings?: () => void; onOpenAnnotations?: () => void } = {},
+): Header {
   const title = el("h1", { class: "app-title", text: "LoL Game Review" });
   const versionEl = el("span", {
     class: "app-version muted",
@@ -40,12 +43,19 @@ export function createHeader(handlers: { onOpenSettings?: () => void } = {}): He
     attrs: { type: "button", "aria-haspopup": "dialog", title: "Réglages de stockage" },
     on: { click: () => handlers.onOpenSettings?.() },
   });
-  const right = el("div", { class: "header-right" }, [pill, warning, account, settingsButton]);
+  const annotationsButton = el("button", {
+    class: "btn btn-small annotations-btn",
+    text: "✎ Annotations",
+    attrs: { type: "button", title: "Revoir mes moments annotés, toutes parties confondues" },
+    on: { click: () => handlers.onOpenAnnotations?.() },
+  });
+  const right = el("div", { class: "header-right" }, [pill, warning, account, annotationsButton, settingsButton]);
   const root = el("header", { class: "app-header" }, [brand, right]);
 
   return {
     el: root,
     settingsButton,
+    annotationsButton,
     setVersion(version) {
       const label = versionLabel(version);
       versionEl.hidden = label === null;

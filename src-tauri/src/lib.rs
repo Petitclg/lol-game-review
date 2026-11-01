@@ -117,6 +117,7 @@ pub fn run() {
             commands::get_clips,
             commands::get_annotations,
             commands::set_annotation,
+            commands::list_annotated_moments,
             commands::delete_recording,
             commands::get_ultimate_status,
             commands::get_settings,

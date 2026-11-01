@@ -38,6 +38,23 @@ pub struct SessionMeta {
     pub clips_ready: bool,
 }
 
+/// What the match history says about a game, kept next to the game so that its
+/// annotations can still be filtered (champion, year, outcome) once the game has left the
+/// history of the client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameSummary {
+    pub game_id: u64,
+    pub created_ms: u64,
+    pub duration_secs: u32,
+    pub queue_id: u32,
+    pub champion_id: u32,
+    pub kills: u32,
+    pub deaths: u32,
+    pub assists: u32,
+    pub win: bool,
+}
+
 /// Disk usage of the stored games.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +283,29 @@ impl SessionStore {
             }
         }
         Ok(removed)
+    }
+
+    /// The match-history summary saved with the game, if the game was ever listed.
+    pub fn load_game_summary(&self, id: &str) -> Result<Option<GameSummary>, StoreError> {
+        match fs::read(self.session_dir(id)?.join("game.json")) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes).ok()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Saves the match-history summary of the game (nothing is written when it is
+    /// unchanged). The game folder must exist.
+    pub fn save_game_summary(&self, id: &str, summary: &GameSummary) -> Result<(), StoreError> {
+        if self.load_game_summary(id)?.as_ref() == Some(summary) {
+            return Ok(());
+        }
+        let dir = self.session_dir(id)?;
+        if !dir.is_dir() {
+            return Err(StoreError::NotFound);
+        }
+        write_atomic(&dir.join("game.json"), &serde_json::to_vec(summary)?)?;
+        Ok(())
     }
 
     /// Deletes the whole session directory (used for discarded sessions).
@@ -607,6 +647,66 @@ mod tests {
         assert!(rec.recognized);
         assert_eq!(rec.casts, [1.5, 2.5]);
         assert_eq!(rec.hud_scale, None);
+    }
+
+    #[test]
+    fn a_game_summary_is_saved_with_the_game_and_only_rewritten_when_it_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.save_session(&session("a", 1)).unwrap();
+        assert_eq!(store.load_game_summary("a").unwrap(), None);
+        let mut summary = GameSummary {
+            game_id: 7,
+            created_ms: 1_700_000_000_000,
+            duration_secs: 1800,
+            queue_id: 420,
+            champion_id: 103,
+            kills: 5,
+            deaths: 2,
+            assists: 9,
+            win: true,
+        };
+        store.save_game_summary("a", &summary).unwrap();
+        assert_eq!(store.load_game_summary("a").unwrap(), Some(summary.clone()));
+        let path = store.session_dir("a").unwrap().join("game.json");
+        let written = fs::metadata(&path).unwrap().modified().unwrap();
+        store.save_game_summary("a", &summary).unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), written);
+        summary.win = false;
+        store.save_game_summary("a", &summary).unwrap();
+        assert_eq!(
+            store.load_game_summary("a").unwrap().map(|s| s.win),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn a_game_summary_is_not_created_for_a_missing_game_and_a_corrupt_one_reads_as_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        let summary = GameSummary {
+            game_id: 1,
+            created_ms: 0,
+            duration_secs: 0,
+            queue_id: 0,
+            champion_id: 0,
+            kills: 0,
+            deaths: 0,
+            assists: 0,
+            win: false,
+        };
+        assert!(matches!(
+            store.save_game_summary("nope", &summary),
+            Err(StoreError::NotFound)
+        ));
+        assert!(!dir.path().join("nope").exists());
+        store.prepare("a").unwrap();
+        fs::write(store.session_dir("a").unwrap().join("game.json"), b"{").unwrap();
+        assert_eq!(store.load_game_summary("a").unwrap(), None);
+        assert!(matches!(
+            store.load_game_summary("../a"),
+            Err(StoreError::InvalidId)
+        ));
     }
 
     #[test]

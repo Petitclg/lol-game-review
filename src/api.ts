@@ -6,6 +6,7 @@ import type {
   Account,
   Annotation,
   Annotations,
+  AnnotatedMoment,
   Clip,
   ClipsGenerated,
   ClipsProgress,
@@ -26,6 +27,8 @@ export interface Backend {
   getClips(sessionId: string): Promise<Clip[]>;
   /** Annotations d'une partie, par identifiant de moment. */
   getAnnotations(sessionId: string): Promise<Annotations>;
+  /** Tous les moments annotés, toutes parties confondues, du plus récent au plus ancien. */
+  listAnnotatedMoments(): Promise<AnnotatedMoment[]>;
   /** Enregistre l'annotation d'un moment (une annotation vide la supprime) et la renvoie telle que gardée. */
   setAnnotation(sessionId: string, partId: string, tags: string[], note: string): Promise<Annotation>;
   deleteRecording(sessionId: string): Promise<void>;
@@ -67,6 +70,7 @@ function createTauriBackend(): Backend {
     generateClips: (sessionId) => invoke<Clip[]>("generate_clips", { sessionId }),
     getClips: (sessionId) => invoke<Clip[]>("get_clips", { sessionId }),
     getAnnotations: (sessionId) => invoke<Annotations>("get_annotations", { sessionId }),
+    listAnnotatedMoments: () => invoke<AnnotatedMoment[]>("list_annotated_moments"),
     setAnnotation: (sessionId, partId, tags, note) =>
       invoke<Annotation>("set_annotation", { sessionId, partId, tags, note }),
     deleteRecording: (sessionId) => invoke<void>("delete_recording", { sessionId }),

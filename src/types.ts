@@ -118,6 +118,37 @@ export interface Annotation {
 /** Annotations d'une partie, par identifiant de moment ; un moment sans annotation est absent. */
 export type Annotations = Record<string, Annotation>;
 
+/** Ce que l'historique du client dit d'une partie, gardé avec elle (champion, issue, date). */
+export interface GameSummary {
+  gameId: number;
+  createdMs: number;
+  durationSecs: number;
+  queueId: number;
+  championId: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  win: boolean;
+}
+
+/** Un moment annoté, toutes parties confondues. */
+export interface AnnotatedMoment {
+  sessionId: string;
+  partId: string;
+  theme: Theme;
+  /** Libellé du moment quand son clip est connu, sinon vide. */
+  label: string;
+  gameTimeSecs: number;
+  tags: string[];
+  note: string;
+  /** Clip montrant le moment (un clip fusionné peut en montrer plusieurs). */
+  clipId: string | null;
+  /** Fichier du clip s'il existe encore. */
+  file: string | null;
+  /** null pour une partie qui n'a jamais été listée : champion, année et issue inconnus. */
+  game: GameSummary | null;
+}
+
 export interface Status {
   state: "idle" | "inGame";
   recording: boolean;

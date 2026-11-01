@@ -33,5 +33,15 @@ Après la construction des clips par thème (qui regroupent déjà les moments p
 
 ## Conséquences
 
-- Hors périmètre pour l'instant : filtrer ou compter les clips par étiquette (par exemple « mes morts par face-check »), exporter les annotations.
+- Hors périmètre pour l'instant : exporter les annotations.
 - Un identifiant d'étiquette ne doit jamais être modifié (seul le libellé peut l'être) : il est écrit sur le disque.
+
+## Revue de toutes les parties (2026-11-01)
+
+Les annotations restent **dans le dossier de leur partie** (`annotations.json`) : les chronologies ne sont jamais supprimées par le plafond de disque, seules les vidéos puis les clips le sont, donc elles durent autant que la partie. Il manquait de quoi les **filtrer** : champion, issue et date ne sont connus que de l'historique du client, qui est limité.
+
+- `game.json`, à côté de `session.json`, garde le résumé de la partie (`GameSummary` : champion, issue, date, KDA, file). Il est écrit à chaque `list_games` pour les parties qui ont une session (rien n'est réécrit s'il n'a pas changé). Une partie annotée a donc toujours été listée, et son résumé survit à la sortie de l'historique. Une partie jamais listée a des annotations sans résumé : elle n'a ni champion, ni année, ni issue (elle est écartée dès qu'un de ces filtres est actif).
+- `lgr-engine::annotated::list_annotated_moments` (commande `list_annotated_moments`) parcourt les parties, ne lit que celles qui ont des annotations et renvoie pour chaque moment son thème, son libellé, ses étiquettes, sa note, son clip (identifiant et fichier s'il existe encore) et le résumé de la partie. Un moment dont le clip a été supprimé reste listé (« clip indisponible ») ; un identifiant qui n'est pas un moment est ignoré.
+- Le filtrage, les décomptes et les facettes sont **côté interface** (`src/moments.ts`, fonctions pures testées) : le volume est faible et les noms de champions viennent de Data Dragon.
+- Vue « ✎ Annotations » (bouton de l'en-tête) : filtres champion, année, issue (victoire / défaite), étiquette, type de moment et texte de la note ; décompte des étiquettes sur les moments filtrés, **cliquable** (« Face-check 7 » ne garde que ces moments) ; lecteur avec précédent / suivant et lecture continue pour **revoir tous les clips** du filtre. Un clip fusionné montrant plusieurs moments annotés est lu pour chacun d'eux.
+- Un clip fusionné contient plusieurs moments : le moment annoté est celui de la liste, mais la vidéo est celle du clip entier.

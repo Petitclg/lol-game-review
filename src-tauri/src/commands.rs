@@ -7,7 +7,8 @@ use lgr_core::session::Clip;
 use lgr_core::settings::Settings;
 use lgr_core::store::StorageUsage;
 use lgr_engine::{
-    load_clips as load_session_clips, merge_games, ultimate_status, GameEntry, Status,
+    list_annotated_moments as read_annotated_moments, load_clips as load_session_clips,
+    merge_games, remember_games, ultimate_status, AnnotatedMoment, GameEntry, Status,
     UltimateStatus,
 };
 use lgr_lcu::{discover_lockfile_candidates, LcuApi, LcuClient};
@@ -60,7 +61,11 @@ pub async fn list_games(state: State<'_, AppState>, count: u32) -> Result<Vec<Ga
             .recent_matches(count.clamp(1, 50))
             .map_err(|e| e.to_string())?;
         let sessions = store.list().map_err(|e| e.to_string())?;
-        Ok(merge_games(&matches, &sessions))
+        let games = merge_games(&matches, &sessions);
+        // champion, outcome and date are only known to the client, whose history is
+        // limited: keep them with the game for the review of annotations
+        remember_games(&store, &games);
+        Ok(games)
     })
     .await
 }
@@ -133,6 +138,14 @@ pub async fn set_annotation(
             .map_err(|e| e.to_string())
     })
     .await
+}
+
+#[tauri::command]
+pub async fn list_annotated_moments(
+    state: State<'_, AppState>,
+) -> Result<Vec<AnnotatedMoment>, String> {
+    let store = state.store.clone();
+    blocking(move || read_annotated_moments(&store).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]

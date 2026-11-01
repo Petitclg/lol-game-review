@@ -193,16 +193,7 @@ fn snapshot_at(snapshots: &[Snapshot], game_time_secs: f64) -> Option<&Snapshot>
 }
 
 fn theme_key(theme: Theme) -> &'static str {
-    match theme {
-        Theme::Kill => "kill",
-        Theme::Death => "death",
-        Theme::Assist => "assist",
-        Theme::Objective => "objective",
-        Theme::Turret => "turret",
-        Theme::Ultimate => "ultimate",
-        Theme::Flash => "flash",
-        Theme::KeyMoment => "key_moment",
-    }
+    theme.key()
 }
 
 fn group_label(highlights: &[Highlight]) -> String {

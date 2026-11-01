@@ -1,4 +1,5 @@
 import { errorMessage, type Backend } from "./api";
+import { createAnnotationsView } from "./components/annotationsView";
 import { createClipView } from "./components/clipView";
 import { createGameList } from "./components/gameList";
 import { createHeader } from "./components/header";
@@ -33,7 +34,10 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   let prices: ItemPrices | null = null;
   const unlisteners: Array<() => void> = [];
 
-  const header = createHeader({ onOpenSettings: () => settings.open(header.settingsButton) });
+  const header = createHeader({
+    onOpenSettings: () => settings.open(header.settingsButton),
+    onOpenAnnotations: () => showAnnotations(),
+  });
   const settings = createSettingsPanel(backend, {
     onSaved: () => {
       // le plafond a pu supprimer des vidéos sources
@@ -55,17 +59,30 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     onAnnotate: (partId, tags, note) => annotate(partId, tags, note),
   });
   const side = createSidePanel();
+  const annotationsView = createAnnotationsView(backend, { onClose: () => showGames() });
 
   const main = el("main", { class: "layout" }, [
     el("div", { class: "col-games" }, [games.el]),
     el("div", { class: "col-clips" }, [clipView.el]),
     el("div", { class: "col-side" }, [side.el]),
   ]);
-  replaceChildren(root, [header.el, banner, main, settings.el]);
+  replaceChildren(root, [header.el, banner, main, annotationsView.el, settings.el]);
   if (backend.isMock) {
     header.el
       .querySelector(".header-right")
       ?.prepend(el("span", { class: "badge badge-recorded", text: "Mode simulé" }));
+  }
+
+  function showAnnotations(): void {
+    main.hidden = true;
+    header.annotationsButton.setAttribute("aria-pressed", "true");
+    void annotationsView.open();
+  }
+
+  function showGames(): void {
+    annotationsView.close();
+    main.hidden = false;
+    header.annotationsButton.setAttribute("aria-pressed", "false");
   }
 
   function render(): void {
@@ -258,6 +275,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
 
   void getDdragon().then((d) => {
     dd = d;
+    annotationsView.setDdragon(d);
     render();
     if (!d) return;
     void getItemPrices(d.version).then((p) => {

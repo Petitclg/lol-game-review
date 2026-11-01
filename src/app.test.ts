@@ -82,6 +82,31 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(root.querySelector(".clip-list .player-nav")).toBeNull();
   }, 15000);
 
+  it("la vue « Annotations » remplace la liste des parties, et on y retrouve ce qu'on a annoté", async () => {
+    await until(() => root.querySelectorAll(".game-item").length > 0);
+    root.querySelectorAll<HTMLButtonElement>(".game-item")[0]?.click();
+    root.querySelector<HTMLButtonElement>(".toolbar .btn-primary")?.click();
+    await until(() => root.querySelectorAll(".clip-item").length > 0, 8000);
+    root.querySelector<HTMLElement>('[data-theme="death"]')?.click();
+    const chip = root.querySelector<HTMLButtonElement>('.annotation-part [data-tag="face_check"]') as HTMLButtonElement;
+    chip.click();
+    await new Promise((r) => setTimeout(r, 200));
+
+    const button = root.querySelector<HTMLButtonElement>(".annotations-btn") as HTMLButtonElement;
+    button.click();
+    expect(root.querySelector<HTMLElement>(".layout")?.hidden).toBe(true);
+    expect(root.querySelector<HTMLElement>(".annotations-view")?.hidden).toBe(false);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await until(() => root.querySelectorAll(".am-item").length === 1);
+    expect(root.querySelector(".am-item")?.textContent).toContain("Face-check");
+    expect(root.querySelector(".am-summary")?.textContent).toContain("Face-check 1");
+
+    root.querySelector<HTMLButtonElement>(".annotations-view .am-head button")?.click();
+    expect(root.querySelector<HTMLElement>(".layout")?.hidden).toBe(false);
+    expect(root.querySelector<HTMLElement>(".annotations-view")?.hidden).toBe(true);
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+  }, 20000);
+
   it("annote un clip fusionné : étiquettes par moment, note, enregistrement et marque dans la liste", async () => {
     app.destroy();
     root.replaceChildren();

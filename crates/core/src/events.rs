@@ -66,6 +66,40 @@ pub enum Theme {
     KeyMoment,
 }
 
+impl Theme {
+    pub const ALL: [Theme; 8] = [
+        Theme::Kill,
+        Theme::Death,
+        Theme::Assist,
+        Theme::Objective,
+        Theme::Turret,
+        Theme::Ultimate,
+        Theme::Flash,
+        Theme::KeyMoment,
+    ];
+
+    /// The identifier used in clip and highlight ids (the serialised name).
+    #[must_use]
+    pub fn key(self) -> &'static str {
+        match self {
+            Theme::Kill => "kill",
+            Theme::Death => "death",
+            Theme::Assist => "assist",
+            Theme::Objective => "objective",
+            Theme::Turret => "turret",
+            Theme::Ultimate => "ultimate",
+            Theme::Flash => "flash",
+            Theme::KeyMoment => "key_moment",
+        }
+    }
+
+    /// The theme with this identifier.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Theme> {
+        Theme::ALL.into_iter().find(|t| t.key() == key)
+    }
+}
+
 /// A highlight in which the tracked player is involved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Highlight {
@@ -141,6 +175,18 @@ fn classify_one<S: AsRef<str>>(e: &RawLiveEvent, aliases: &[S]) -> Option<Highli
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_keys_are_the_serialised_names_and_round_trip() {
+        for theme in Theme::ALL {
+            let json = serde_json::to_string(&theme).unwrap();
+            assert_eq!(json, format!("\"{}\"", theme.key()));
+            assert_eq!(Theme::from_key(theme.key()), Some(theme));
+        }
+        assert_eq!(Theme::from_key("nope"), None);
+        assert_eq!(Theme::from_key(""), None);
+        assert_eq!(Theme::ALL.len(), 8);
+    }
 
     const PAYLOAD: &str = r#"{"Events":[
       {"EventID":0,"EventName":"GameStart","EventTime":0.0},
