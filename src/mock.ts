@@ -1,5 +1,5 @@
 import type { Backend, Unlisten } from "./api";
-import { withAnnotation } from "./annotations";
+import { cleanLabel, withAnnotation } from "./annotations";
 import { DEFAULT_SETTINGS, normalizeSettings } from "./settings";
 import type {
   Account,
@@ -336,6 +336,7 @@ export function createMockBackend(): Backend {
   }
   let settings: Settings = { ...DEFAULT_SETTINGS };
   const annotations = new Map<string, Annotations>();
+  const customTags: string[] = [];
 
   const MIB = 1024 ** 2;
   const GIB = 1024 ** 3;
@@ -445,7 +446,6 @@ export function createMockBackend(): Backend {
             label: found?.part.label ?? "",
             gameTimeSecs: found?.part.gameTimeSecs ?? Number(time),
             tags: a.tags,
-            note: a.note,
             clipId: found?.clip.id ?? null,
             file: found?.clip.file ?? null,
             game: game && {
@@ -464,11 +464,26 @@ export function createMockBackend(): Backend {
       }
       return out.sort((a, b) => (b.game?.createdMs ?? 0) - (a.game?.createdMs ?? 0) || a.gameTimeSecs - b.gameTimeSecs);
     },
-    async setAnnotation(sessionId, partId, tags, note) {
+    async setAnnotation(sessionId, partId, tags) {
       await delay(60);
-      const kept: Annotation = { tags: [...new Set(tags)], note: note.trim() };
+      const kept: Annotation = { tags: [...new Set(tags)] };
       annotations.set(sessionId, withAnnotation(annotations.get(sessionId) ?? {}, partId, kept));
       return kept;
+    },
+    async getCustomTags() {
+      return [...customTags];
+    },
+    async addCustomTag(text) {
+      const label = cleanLabel(text);
+      if (label === null) throw "Un tag fait de 1 à 40 caractères, sans caractère de contrôle.";
+      const existing = customTags.find((t) => t.toLowerCase() === label.toLowerCase());
+      if (!existing) customTags.push(label);
+      return { labels: [...customTags], label: existing ?? label };
+    },
+    async removeCustomTag(text) {
+      const at = customTags.findIndex((t) => t.toLowerCase() === text.trim().toLowerCase());
+      if (at >= 0) customTags.splice(at, 1);
+      return [...customTags];
     },
     async deleteRecording(sessionId) {
       await delay(200);

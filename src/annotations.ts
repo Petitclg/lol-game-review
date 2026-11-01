@@ -51,15 +51,40 @@ export function tagsFor(theme: Theme): TagDef[] {
 
 const ALL_TAGS: readonly TagDef[] = [...DEATH_TAGS, ...PLAY_TAGS, ...TEAMFIGHT_TAGS];
 
+/** Préfixe de la forme enregistrée d'un tag personnalisé : `custom:` puis son texte. */
+export const CUSTOM_PREFIX = "custom:";
+/** Longueur maximale du texte d'un tag personnalisé (le backend refuse au-delà). */
+export const MAX_LABEL_CHARS = 40;
+
+export function isCustomTag(id: string): boolean {
+  return id.startsWith(CUSTOM_PREFIX);
+}
+
+export function customTagId(label: string): string {
+  return `${CUSTOM_PREFIX}${label}`;
+}
+
+/**
+ * Texte d'un tag personnalisé saisi : blancs de bord retirés et blancs internes réduits à un
+ * espace, comme le fait le backend. `null` si le texte est vide, trop long ou contient un
+ * caractère de contrôle.
+ */
+export function cleanLabel(text: string): string | null {
+  const label = text.split(/\s+/).filter(Boolean).join(" ");
+  // eslint-disable-next-line no-control-regex
+  const hasControl = /[\u0000-\u001f\u007f-\u009f]/.test(label);
+  if (label === "" || hasControl || [...label].length > MAX_LABEL_CHARS) return null;
+  return label;
+}
+
 /** Étiquette d'un identifiant ; un identifiant inconnu (version plus récente) reste lisible. */
 export function tagDef(id: string): TagDef {
+  if (isCustomTag(id)) return { id, label: id.slice(CUSTOM_PREFIX.length), tone: "neutral" };
   return ALL_TAGS.find((t) => t.id === id) ?? { id, label: id.replace(/_/g, " "), tone: "neutral" };
 }
 
-export const MAX_NOTE_CHARS = 2000;
-
 export function isEmptyAnnotation(a: Annotation | undefined): boolean {
-  return !a || (a.tags.length === 0 && a.note.trim() === "");
+  return !a || a.tags.length === 0;
 }
 
 /** Ajoute ou retire une étiquette sans changer l'ordre des autres. */

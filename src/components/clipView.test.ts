@@ -38,6 +38,8 @@ function setup(clips: Clip[], videoSrc: (p: string) => string | null = (p) => `a
     onSelectClip: vi.fn(),
     onStep: vi.fn(),
     onAnnotate: vi.fn(),
+    onAddCustomTag: vi.fn(),
+    onRemoveCustomTag: vi.fn(),
   });
   document.body.appendChild(view.el);
   view.update(stateWith(clips));

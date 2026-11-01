@@ -50,6 +50,8 @@ function mount(state: State) {
     onSelectClip: vi.fn(),
     onStep: vi.fn(),
     onAnnotate: vi.fn(),
+    onAddCustomTag: vi.fn(),
+    onRemoveCustomTag: vi.fn(),
   });
   document.body.appendChild(view.el);
   view.update(state);

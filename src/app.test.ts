@@ -107,7 +107,7 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(button.getAttribute("aria-pressed")).toBe("false");
   }, 20000);
 
-  it("annote un clip fusionné : étiquettes par moment, note, enregistrement et marque dans la liste", async () => {
+  it("annote un clip fusionné : étiquettes par moment, tags personnalisés, enregistrement et marque dans la liste", async () => {
     app.destroy();
     root.replaceChildren();
     const backend = createMockBackend();
@@ -142,33 +142,52 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(merged?.isConnected).toBe(false); // la liste est redessinée avec la marque
     expect(root.querySelector(".clip-annotated")?.textContent).toContain("✎ 1");
     await until(() => setAnnotation.mock.calls.length === 1);
-    expect(setAnnotation).toHaveBeenLastCalledWith(sessionId, partId, ["face_check"], "");
+    expect(setAnnotation).toHaveBeenLastCalledWith(sessionId, partId, ["face_check"]);
 
-    // une note, enregistrée quand le champ perd le focus
-    const note = deathPart.querySelector<HTMLTextAreaElement>("textarea") as HTMLTextAreaElement;
-    note.value = "  trop avancé sans vision ";
-    note.dispatchEvent(new Event("change", { bubbles: true }));
+    // un tag personnalisé : il est créé, posé sur le moment, puis proposé partout
+    const input = deathPart.querySelector<HTMLInputElement>(".custom-tag-input") as HTMLInputElement;
+    input.value = "  trop avancé  sans vision ";
+    deathPart.querySelector("form")?.dispatchEvent(new Event("submit", { cancelable: true }));
     await until(() => setAnnotation.mock.calls.length === 2);
-    expect(setAnnotation).toHaveBeenLastCalledWith(
-      sessionId,
-      partId,
-      ["face_check"],
-      "  trop avancé sans vision ",
-    );
-    await new Promise((r) => setTimeout(r, 150));
+    expect(setAnnotation).toHaveBeenLastCalledWith(sessionId, partId, ["face_check", "custom:trop avancé sans vision"]);
+    expect(await backend.getCustomTags()).toEqual(["trop avancé sans vision"]);
+    await until(() => killPart.querySelector('[data-tag="custom:trop avancé sans vision"]') !== null);
+    expect(
+      deathPart.querySelector('[data-tag="custom:trop avancé sans vision"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      killPart.querySelector('[data-tag="custom:trop avancé sans vision"]')?.getAttribute("aria-pressed"),
+    ).toBe("false");
     expect(await backend.getAnnotations(sessionId)).toEqual({
-      [partId]: { tags: ["face_check"], note: "trop avancé sans vision" },
+      [partId]: { tags: ["face_check", "custom:trop avancé sans vision"] },
     });
 
-    // retirer l'étiquette et la note supprime l'annotation
+    // le même tag, tapé avec une autre casse, retrouve celui qui existe
+    input.value = "TROP AVANCÉ SANS VISION";
+    deathPart.querySelector("form")?.dispatchEvent(new Event("submit", { cancelable: true }));
+    await until(() => setAnnotation.mock.calls.length === 3);
+    expect(await backend.getCustomTags()).toEqual(["trop avancé sans vision"]);
+    expect(setAnnotation).toHaveBeenLastCalledWith(sessionId, partId, ["face_check", "custom:trop avancé sans vision"]);
+
+    // la croix ne propose plus le tag mais le moment le garde
+    const cross = deathPart.querySelector<HTMLButtonElement>(".tag-remove") as HTMLButtonElement;
+    cross.click();
+    await until(() => deathPart.querySelector(".tag-remove") === null);
+    expect(await backend.getCustomTags()).toEqual([]);
+    expect(killPart.querySelector('[data-tag="custom:trop avancé sans vision"]')).toBeNull();
+    expect(
+      deathPart.querySelector('[data-tag="custom:trop avancé sans vision"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect((await backend.getAnnotations(sessionId))[partId]?.tags).toContain("custom:trop avancé sans vision");
+
+    // décocher le tag puis l'étiquette supprime l'annotation
+    deathPart.querySelector<HTMLButtonElement>('[data-tag="custom:trop avancé sans vision"]')?.click();
     chip.click();
-    note.value = "";
-    note.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => setAnnotation.mock.calls.length === 4);
+    await until(() => setAnnotation.mock.calls.length === 5);
     await new Promise((r) => setTimeout(r, 150));
     expect(await backend.getAnnotations(sessionId)).toEqual({});
     expect(root.querySelector(".clip-annotated")).toBeNull();
-  }, 20000);
+  }, 25000);
 
   it("génération automatique : suit la progression, puis rafraîchit les parties et les clips", async () => {
     app.destroy();

@@ -109,14 +109,19 @@ export interface ClipPart {
   gameTimeSecs: number;
 }
 
-/** Étiquettes (identifiants du catalogue) et note libre d'un moment. */
+/** Étiquettes (identifiants du catalogue ou `custom:texte`) d'un moment. */
 export interface Annotation {
   tags: string[];
-  note: string;
 }
 
 /** Annotations d'une partie, par identifiant de moment ; un moment sans annotation est absent. */
 export type Annotations = Record<string, Annotation>;
+
+/** Résultat de l'ajout d'un tag personnalisé : la liste proposée, et le texte à poser sur le moment. */
+export interface AddedCustomTag {
+  labels: string[];
+  label: string;
+}
 
 /** Ce que l'historique du client dit d'une partie, gardé avec elle (champion, issue, date). */
 export interface GameSummary {
@@ -140,7 +145,6 @@ export interface AnnotatedMoment {
   label: string;
   gameTimeSecs: number;
   tags: string[];
-  note: string;
   /** Clip montrant le moment (un clip fusionné peut en montrer plusieurs). */
   clipId: string | null;
   /** Fichier du clip s'il existe encore. */

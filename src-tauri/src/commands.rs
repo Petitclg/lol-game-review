@@ -129,15 +129,42 @@ pub async fn set_annotation(
     session_id: String,
     part_id: String,
     tags: Vec<String>,
-    note: String,
 ) -> Result<Annotation, String> {
     let store = state.store.clone();
     blocking(move || {
         store
-            .set_annotation(&session_id, &part_id, &tags, &note)
+            .set_annotation(&session_id, &part_id, &tags)
             .map_err(|e| e.to_string())
     })
     .await
+}
+
+/// The custom tags offered on every highlight.
+#[tauri::command]
+pub fn get_custom_tags(state: State<'_, AppState>) -> Vec<String> {
+    state.custom_tags.load()
+}
+
+/// The list after an addition, and the text to put on the highlight (the existing one when
+/// the tag was already offered, whatever its case).
+#[derive(Serialize)]
+pub struct AddedCustomTag {
+    labels: Vec<String>,
+    label: String,
+}
+
+#[tauri::command]
+pub fn add_custom_tag(state: State<'_, AppState>, label: String) -> Result<AddedCustomTag, String> {
+    state
+        .custom_tags
+        .add(&label)
+        .map(|(labels, label)| AddedCustomTag { labels, label })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn remove_custom_tag(state: State<'_, AppState>, label: String) -> Result<Vec<String>, String> {
+    state.custom_tags.remove(&label).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

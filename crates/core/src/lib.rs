@@ -1,5 +1,6 @@
 pub mod annotations;
 pub mod clips;
+pub mod custom_tags;
 pub mod events;
 pub mod loading;
 pub mod moments;

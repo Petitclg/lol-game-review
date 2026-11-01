@@ -6,6 +6,7 @@ mod runtime;
 mod state;
 mod updater;
 
+use lgr_core::custom_tags::CustomTagStore;
 use lgr_core::settings::SettingsStore;
 use lgr_core::store::SessionStore;
 use state::AppState;
@@ -77,6 +78,7 @@ pub fn run() {
             let state = AppState::new(
                 SessionStore::new(data_dir.join("sessions")),
                 settings,
+                CustomTagStore::new(data_dir.join("custom-tags.json")),
                 ffmpeg,
             );
             runtime::spawn_maintenance(&state);
@@ -117,6 +119,9 @@ pub fn run() {
             commands::get_clips,
             commands::get_annotations,
             commands::set_annotation,
+            commands::get_custom_tags,
+            commands::add_custom_tag,
+            commands::remove_custom_tag,
             commands::list_annotated_moments,
             commands::delete_recording,
             commands::get_ultimate_status,

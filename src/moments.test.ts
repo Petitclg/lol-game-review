@@ -41,7 +41,6 @@ function moment(partId: string, extra: Partial<AnnotatedMoment> = {}): Annotated
     label: "Mort",
     gameTimeSecs: 100,
     tags: [],
-    note: "",
     clipId: "seq-0",
     file: "C:\\clips\\seq-0.mp4",
     game: game(),
@@ -52,7 +51,7 @@ function moment(partId: string, extra: Partial<AnnotatedMoment> = {}): Annotated
 const f = (extra: Partial<MomentFilters>): MomentFilters => ({ ...NO_FILTERS, ...extra });
 
 const M = [
-  moment("death-1.0", { tags: ["face_check", "greed"], note: "Trop avancé sans vision", game: game({ championId: 103, win: false }) }),
+  moment("death-1.0", { tags: ["face_check", "greed", "custom:Trop avancé sans vision"], game: game({ championId: 103, win: false }) }),
   moment("death-2.0", { tags: ["face_check"], sessionId: "s2", game: game({ gameId: 2, championId: 222, win: false, createdMs: at(2025) }) }),
   moment("kill-3.0", { theme: "kill", label: "Kill", tags: ["good_outplay"], sessionId: "s3", game: game({ gameId: 3, championId: 103, win: true, createdMs: at(2025) }) }),
   moment("death-4.0", { tags: ["outnumbered"], sessionId: "s4", game: null, file: null, clipId: null }),
@@ -94,12 +93,16 @@ describe("filterMoments", () => {
     expect(filterMoments(M, f({ theme: "kill" })).map((m) => m.partId)).toEqual(["kill-3.0"]);
   });
 
-  it("par texte : note, libellé, nom de l'étiquette, type ; sans accents ni casse", () => {
+  it("par texte : libellé, nom des étiquettes (y compris personnalisées), type ; sans accents ni casse", () => {
     expect(filterMoments(M, f({ text: "AVANCE" })).map((m) => m.partId)).toEqual(["death-1.0"]);
     expect(filterMoments(M, f({ text: "face-check" })).map((m) => m.partId)).toEqual(["death-1.0", "death-2.0"]);
     expect(filterMoments(M, f({ text: "infériorité" })).map((m) => m.partId)).toEqual(["death-4.0"]);
     expect(filterMoments(M, f({ text: "  kill " })).map((m) => m.partId)).toEqual(["kill-3.0"]);
     expect(filterMoments(M, f({ text: "zzz" }))).toEqual([]);
+  });
+
+  it("par étiquette : un tag personnalisé se filtre comme les autres", () => {
+    expect(filterMoments(M, f({ tag: "custom:Trop avancé sans vision" })).map((m) => m.partId)).toEqual(["death-1.0"]);
   });
 
   it("les filtres se combinent (et)", () => {
@@ -124,6 +127,7 @@ describe("décomptes et facettes", () => {
       { tag: "good_outplay", count: 1 }, // « Bon outplay »
       { tag: "greed", count: 1 }, // « Greed »
       { tag: "outnumbered", count: 1 }, // « Infériorité numérique »
+      { tag: "custom:Trop avancé sans vision", count: 1 },
     ]);
     expect(tagCounts([])).toEqual([]);
   });

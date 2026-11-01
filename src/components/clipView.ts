@@ -35,8 +35,12 @@ export interface ClipViewHandlers {
   onTheme(theme: ThemeFilter): void;
   onSelectClip(id: string): void;
   onStep(delta: number): void;
-  /** Enregistre l'annotation (étiquettes et note) d'un moment du clip. */
-  onAnnotate(partId: string, tags: string[], note: string): void;
+  /** Enregistre les étiquettes d'un moment du clip. */
+  onAnnotate(partId: string, tags: string[]): void;
+  /** Crée (ou retrouve) un tag personnalisé et le pose sur un moment du clip. */
+  onAddCustomTag(partId: string, label: string): void;
+  /** Cesse de proposer un tag personnalisé. */
+  onRemoveCustomTag(label: string): void;
 }
 
 export interface ClipView {
@@ -112,7 +116,11 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   });
   const clipTitle = el("h3", { class: "clip-title" });
   const nav = el("div", { class: "player-nav" }, [prevBtn, clipTitle, nextBtn]);
-  const annotations = createAnnotationPanel({ onChange: (partId, tags, note) => h.onAnnotate(partId, tags, note) });
+  const annotations = createAnnotationPanel({
+    onChange: (partId, tags) => h.onAnnotate(partId, tags),
+    onAddCustomTag: (partId, label) => h.onAddCustomTag(partId, label),
+    onRemoveCustomTag: (label) => h.onRemoveCustomTag(label),
+  });
   const player = el("div", { class: "clip-player" }, [video, videoMsg, videoErr, nav, annotations.el]);
   const browser = el("div", { class: "clip-browser", attrs: { id: "clip-panel", role: "tabpanel" } }, [player, listEl]);
 

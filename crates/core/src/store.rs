@@ -2,7 +2,9 @@
 //!
 //! Layout: `<root>/<session-id>/{session.json, recording.mkv, clips.json, clips/*.mp4}`.
 
-use crate::annotations::{check_part_id, Annotation, AnnotationError, Annotations};
+use crate::annotations::{
+    check_part_id, tag_from_legacy_note, Annotation, AnnotationError, Annotations, MAX_TAGS,
+};
 use crate::session::{Clip, Session};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -13,6 +15,16 @@ use std::sync::Mutex;
 /// Serialises read-modify-write cycles on `annotations.json`: the UI may save two
 /// highlights in quick succession.
 static ANNOTATIONS_LOCK: Mutex<()> = Mutex::new(());
+
+/// An annotation as older versions wrote it: tags and a free note. The note is read only to
+/// be converted into a custom tag.
+#[derive(Deserialize)]
+struct StoredAnnotation {
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    note: String,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -117,7 +129,7 @@ fn validate_id(id: &str) -> Result<(), StoreError> {
     }
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, bytes)?;
     fs::rename(&tmp, path)
@@ -222,17 +234,62 @@ impl SessionStore {
         }
     }
 
-    /// The annotations of a game; empty when there are none.
+    /// The annotations of a game; empty when there are none. Free notes written by older
+    /// versions become custom tags (and the file is rewritten without them).
     pub fn load_annotations(&self, id: &str) -> Result<Annotations, StoreError> {
-        let path = self.session_dir(id)?.join("annotations.json");
-        match fs::read(path) {
-            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Annotations::new()),
-            Err(e) => Err(e.into()),
+        let _guard = ANNOTATIONS_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (all, migrated) = self.read_annotations(id)?;
+        if migrated {
+            // best effort: the converted form is returned either way
+            let _ = self.write_annotations(id, &all);
         }
+        Ok(all)
     }
 
-    /// Records the annotation of one highlight; an empty one removes it. Returns the
+    /// Reads `annotations.json`; the flag tells whether a free note was converted.
+    fn read_annotations(&self, id: &str) -> Result<(Annotations, bool), StoreError> {
+        let path = self.session_dir(id)?.join("annotations.json");
+        let bytes = match fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok((Annotations::new(), false))
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let stored: std::collections::BTreeMap<String, StoredAnnotation> =
+            serde_json::from_slice(&bytes)?;
+        let mut migrated = false;
+        let mut all = Annotations::new();
+        for (part_id, old) in stored {
+            let mut tags: Vec<String> = Vec::new();
+            for tag in old.tags {
+                if !tags.contains(&tag) {
+                    tags.push(tag);
+                }
+            }
+            if let Some(tag) = tag_from_legacy_note(&old.note) {
+                migrated = true;
+                if !tags.contains(&tag) {
+                    tags.push(tag);
+                }
+            } else if !old.note.is_empty() {
+                migrated = true;
+            }
+            tags.truncate(MAX_TAGS);
+            all.insert(part_id, Annotation { tags });
+        }
+        Ok((all, migrated))
+    }
+
+    fn write_annotations(&self, id: &str, all: &Annotations) -> Result<(), StoreError> {
+        let dir = self.prepare(id)?;
+        write_atomic(&dir.join("annotations.json"), &serde_json::to_vec(all)?)?;
+        Ok(())
+    }
+
+    /// Records the tags of one highlight; none removes the annotation. Returns the
     /// annotation as kept. Annotations are independent of the clips: regenerating or
     /// deleting the clips leaves them alone.
     pub fn set_annotation(
@@ -240,21 +297,19 @@ impl SessionStore {
         id: &str,
         part_id: &str,
         tags: &[String],
-        note: &str,
     ) -> Result<Annotation, StoreError> {
         check_part_id(part_id)?;
-        let annotation = Annotation::checked(tags, note)?;
+        let annotation = Annotation::checked(tags)?;
         let _guard = ANNOTATIONS_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut all = self.load_annotations(id)?;
+        let (mut all, _) = self.read_annotations(id)?;
         if annotation.is_empty() {
             all.remove(part_id);
         } else {
             all.insert(part_id.to_owned(), annotation.clone());
         }
-        let dir = self.prepare(id)?;
-        write_atomic(&dir.join("annotations.json"), &serde_json::to_vec(&all)?)?;
+        self.write_annotations(id, &all)?;
         Ok(annotation)
     }
 
@@ -714,18 +769,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = SessionStore::new(dir.path());
         assert!(store.load_annotations("a").unwrap().is_empty());
-        let tags = vec!["face_check".to_owned()];
-        let kept = store
-            .set_annotation("a", "death-160.0", &tags, " trop avancé ")
-            .unwrap();
-        assert_eq!(kept.note, "trop avancé");
+        let tags = vec!["face_check".to_owned(), "custom:  mal   placé ".to_owned()];
+        let kept = store.set_annotation("a", "death-160.0", &tags).unwrap();
+        assert_eq!(kept.tags, ["face_check", "custom:mal placé"]);
         store
-            .set_annotation("a", "kill-150.0", &[], "joli")
+            .set_annotation("a", "kill-150.0", &["good_trade".to_owned()])
             .unwrap();
         let all = store.load_annotations("a").unwrap();
         assert_eq!(all.len(), 2);
-        assert_eq!(all["death-160.0"].tags, tags);
-        store.set_annotation("a", "death-160.0", &[], "").unwrap();
+        assert_eq!(all["death-160.0"].tags, kept.tags);
+        store.set_annotation("a", "death-160.0", &[]).unwrap();
         let all = store.load_annotations("a").unwrap();
         assert_eq!(all.keys().collect::<Vec<_>>(), ["kill-150.0"]);
     }
@@ -735,15 +788,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = SessionStore::new(dir.path());
         assert!(matches!(
-            store.set_annotation("a", "../x", &[], "n"),
+            store.set_annotation("a", "../x", &[]),
             Err(StoreError::Annotation(AnnotationError::InvalidPartId))
         ));
         assert!(matches!(
-            store.set_annotation("a", "kill-1.0", &["Bad".to_owned()], ""),
+            store.set_annotation("a", "kill-1.0", &["Bad".to_owned()]),
             Err(StoreError::Annotation(AnnotationError::InvalidTag(_)))
         ));
         assert!(matches!(
-            store.set_annotation("../a", "kill-1.0", &[], "n"),
+            store.set_annotation("a", "kill-1.0", &["custom:".to_owned()]),
+            Err(StoreError::Annotation(AnnotationError::InvalidTag(_)))
+        ));
+        assert!(matches!(
+            store.set_annotation("../a", "kill-1.0", &[]),
             Err(StoreError::InvalidId)
         ));
         assert!(store.load_annotations("a").unwrap().is_empty());
@@ -755,11 +812,57 @@ mod tests {
         let store = SessionStore::new(dir.path());
         store.save_session(&session("a", 1)).unwrap();
         store
-            .set_annotation("a", "kill-1.0", &[], "à garder")
+            .set_annotation("a", "kill-1.0", &["custom:à garder".to_owned()])
             .unwrap();
         store.save_clips("a", &[]).unwrap();
         store.delete_clips("a").unwrap();
         assert_eq!(store.load_annotations("a").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn free_notes_of_older_versions_become_custom_tags_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.prepare("a").unwrap();
+        let file = store.session_dir("a").unwrap().join("annotations.json");
+        fs::write(
+            &file,
+            r#"{"death-160.0":{"tags":["face_check"],"note":"trop avancé"},
+                "kill-150.0":{"tags":[],"note":""},
+                "kill-200.0":{"tags":["good_trade"],"note":"good_trade"}}"#
+                .as_bytes(),
+        )
+        .unwrap();
+        let all = store.load_annotations("a").unwrap();
+        assert_eq!(
+            all["death-160.0"].tags,
+            ["face_check", "custom:trop avancé"]
+        );
+        assert!(all["kill-150.0"].is_empty(), "nothing to convert");
+        assert_eq!(all["kill-200.0"].tags, ["good_trade", "custom:good_trade"]);
+        // the file was rewritten without notes: reading again changes nothing
+        let rewritten = fs::read_to_string(&file).unwrap();
+        assert!(!rewritten.contains("note"), "{rewritten}");
+        assert_eq!(store.load_annotations("a").unwrap(), all);
+        assert_eq!(fs::read_to_string(&file).unwrap(), rewritten);
+    }
+
+    #[test]
+    fn a_long_free_note_is_shortened_when_it_becomes_a_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.prepare("a").unwrap();
+        let note = "j'ai pris le combat sans voir le jungler adverse arriver par la rivière";
+        fs::write(
+            store.session_dir("a").unwrap().join("annotations.json"),
+            format!(r#"{{"death-1.0":{{"tags":[],"note":"{note}"}}}}"#),
+        )
+        .unwrap();
+        let tags = &store.load_annotations("a").unwrap()["death-1.0"].tags;
+        assert_eq!(tags.len(), 1);
+        let text = tags[0].strip_prefix("custom:").unwrap();
+        assert!(text.chars().count() <= 40 && text.ends_with('…'), "{text}");
+        assert!(note.starts_with(text.trim_end_matches('…')));
     }
 
     #[test]

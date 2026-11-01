@@ -31,7 +31,6 @@ function moment(partId: string, extra: Partial<AnnotatedMoment> = {}): Annotated
     label: "Mort",
     gameTimeSecs: 160,
     tags: [],
-    note: "",
     clipId: key,
     file: `C:\\clips\\${key}.mp4`,
     game: game(),
@@ -40,7 +39,7 @@ function moment(partId: string, extra: Partial<AnnotatedMoment> = {}): Annotated
 }
 
 const MOMENTS: AnnotatedMoment[] = [
-  moment("death-160.0", { tags: ["face_check", "greed"], note: "Trop avancé sans vision" }),
+  moment("death-160.0", { tags: ["face_check", "greed", "custom:Trop avancé sans vision"] }),
   moment("death-400.0", { gameTimeSecs: 400, tags: ["face_check"] }),
   moment("kill-500.0", { theme: "kill", label: "Kill", tags: ["good_outplay"], sessionId: "s2", game: game({ gameId: 2, championId: 222, win: true, createdMs: at(2025) }) }),
   moment("death-90.0", { gameTimeSecs: 90, tags: ["outnumbered"], sessionId: "s3", file: null, clipId: null, game: null }),
@@ -167,7 +166,7 @@ describe("vue des annotations : filtres", () => {
     expect(ui.items()).toHaveLength(1);
   });
 
-  it("par type de moment et par texte de la note", async () => {
+  it("par type de moment et par texte (noms des tags, personnalisés compris)", async () => {
     const ui = setup();
     await ui.view.open();
     ui.setSelect("#am-theme", "kill");
@@ -239,12 +238,12 @@ describe("vue des annotations : décompte des étiquettes", () => {
 });
 
 describe("vue des annotations : revoir les clips", () => {
-  it("charge le clip du premier moment sans le lancer, avec sa note", async () => {
+  it("charge le clip du premier moment sans le lancer, avec ses tags", async () => {
     const ui = setup();
     await ui.view.open();
     expect(ui.video.getAttribute("src")).toBe("asset://C:\\clips\\death1600.mp4");
     expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
-    expect(ui.q(".am-note").textContent).toBe("Trop avancé sans vision");
+    expect(ui.q(".am-now").textContent).toContain("Trop avancé sans vision");
   });
 
   it("cliquer sur un moment lit son clip", async () => {
@@ -313,8 +312,8 @@ describe("vue des annotations : revoir les clips", () => {
     expect(ui.video.hasAttribute("src")).toBe(false);
   });
 
-  it("insère notes et libellés comme du texte, jamais comme du HTML", async () => {
-    const ui = setup([moment("death-1.0", { note: "<img src=x onerror=alert(1)>", label: "<b>x</b>" })]);
+  it("insère tags et libellés comme du texte, jamais comme du HTML", async () => {
+    const ui = setup([moment("death-1.0", { tags: ["custom:<img src=x onerror=alert(1)>"], label: "<b>x</b>" })]);
     await ui.view.open();
     expect(ui.view.el.querySelector("img")).toBeNull();
     expect(ui.view.el.querySelector("b")).toBeNull();

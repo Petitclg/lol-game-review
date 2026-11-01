@@ -30,6 +30,8 @@ export interface State {
   ultimate: { sessionId: string; status: UltimateStatus } | null;
   /** Annotations de la partie sélectionnée, par identifiant de moment. */
   annotations: Annotations;
+  /** Tags personnalisés proposés sur tous les moments. */
+  customTags: string[];
   notice: string | null;
 }
 
@@ -54,6 +56,7 @@ export type Action =
   | { type: "stepClip"; delta: number }
   | { type: "ultimateLoaded"; sessionId: string; status: UltimateStatus | null }
   | { type: "annotationsLoaded"; sessionId: string; annotations: Annotations }
+  | { type: "customTagsLoaded"; labels: string[] }
   | { type: "annotationSaved"; sessionId: string; partId: string; annotation: Annotation }
   | { type: "notice"; message: string | null };
 
@@ -76,6 +79,7 @@ export function initialState(): State {
     selectedClipId: null,
     ultimate: null,
     annotations: {},
+    customTags: [],
     notice: null,
   };
 }
@@ -213,6 +217,8 @@ export function reducer(state: State, action: Action): State {
       if (!game || game.sessionId !== action.sessionId) return state;
       return { ...state, annotations: action.annotations };
     }
+    case "customTagsLoaded":
+      return { ...state, customTags: action.labels };
     case "annotationSaved": {
       const game = selectedGame(state);
       if (!game || game.sessionId !== action.sessionId) return state;

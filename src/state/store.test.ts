@@ -203,7 +203,7 @@ describe("notice", () => {
 });
 
 describe("annotations", () => {
-  const greed = { tags: ["greed"], note: "" };
+  const greed = { tags: ["greed"] };
 
   it("annotationsLoaded remplace les annotations de la partie sélectionnée uniquement", () => {
     const s = withGameSelected();
@@ -216,10 +216,21 @@ describe("annotations", () => {
   it("annotationSaved ajoute, remplace, puis retire une annotation vide", () => {
     let s = withGameSelected();
     s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: greed });
-    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: { tags: [], note: "x" } });
-    expect(s.annotations).toEqual({ "death-5.0": { tags: [], note: "x" } });
-    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: { tags: [], note: "" } });
+    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: { tags: ["custom:x"] } });
+    expect(s.annotations).toEqual({ "death-5.0": { tags: ["custom:x"] } });
+    s = reducer(s, { type: "annotationSaved", sessionId: "s1", partId: "death-5.0", annotation: { tags: [] } });
     expect(s.annotations).toEqual({});
+  });
+
+  it("customTagsLoaded remplace la liste des tags personnalisés, quelle que soit la partie", () => {
+    expect(initialState().customTags).toEqual([]);
+    let s = reducer(initialState(), { type: "customTagsLoaded", labels: ["mal placé", "side lane"] });
+    expect(s.customTags).toEqual(["mal placé", "side lane"]);
+    s = reducer(reducer(s, { type: "selectGame", gameId: 1 }), { type: "customTagsLoaded", labels: ["side lane"] });
+    expect(s.customTags).toEqual(["side lane"]);
+    expect(reducer(withGameSelected(), { type: "selectGame", gameId: 2 }).customTags).toEqual([]);
+    const kept = reducer(initialState(), { type: "customTagsLoaded", labels: ["a"] });
+    expect(reducer({ ...kept, games: [game(1, "s1")] }, { type: "selectGame", gameId: 1 }).customTags).toEqual(["a"]);
   });
 
   it("annotationSaved d'une autre partie est ignoré", () => {

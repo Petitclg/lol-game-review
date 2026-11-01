@@ -51,7 +51,7 @@ export function fold(text: string): string {
 function matchesText(m: AnnotatedMoment, text: string): boolean {
   const needle = fold(text.trim());
   if (needle === "") return true;
-  const haystack = [m.note, m.label, THEME_NAMES[m.theme], ...m.tags.map((t) => tagDef(t).label)]
+  const haystack = [m.label, THEME_NAMES[m.theme], ...m.tags.map((t) => tagDef(t).label)]
     .map(fold)
     .join("\n");
   return haystack.includes(needle);

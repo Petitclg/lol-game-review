@@ -1,4 +1,5 @@
 import { errorMessage, type Backend } from "./api";
+import { customTagId } from "./annotations";
 import { createAnnotationsView } from "./components/annotationsView";
 import { createClipView } from "./components/clipView";
 import { createGameList } from "./components/gameList";
@@ -56,7 +57,9 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     onTheme: (theme) => store.dispatch({ type: "setTheme", theme }),
     onSelectClip: (clipId) => store.dispatch({ type: "selectClip", clipId }),
     onStep: (delta) => store.dispatch({ type: "stepClip", delta }),
-    onAnnotate: (partId, tags, note) => annotate(partId, tags, note),
+    onAnnotate: (partId, tags) => annotate(partId, tags),
+    onAddCustomTag: (partId, label) => addCustomTag(partId, label),
+    onRemoveCustomTag: (label) => removeCustomTag(label),
   });
   const side = createSidePanel();
   const annotationsView = createAnnotationsView(backend, { onClose: () => showGames() });
@@ -188,20 +191,54 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   // être traités dans le désordre et laisser sur le disque l'ancienne version.
   let saveQueue: Promise<void> = Promise.resolve();
 
-  function annotate(partId: string, tags: string[], note: string): void {
+  function annotate(partId: string, tags: string[]): void {
     const sessionId = selectedGame(store.getState())?.sessionId;
     if (!sessionId) return;
-    store.dispatch({ type: "annotationSaved", sessionId, partId, annotation: { tags, note: note.trim() } });
-    saveQueue = saveQueue
-      .then(() => backend.setAnnotation(sessionId, partId, tags, note))
-      .then(() => undefined)
-      .catch((err: unknown) => {
-        store.dispatch({
-          type: "notice",
-          message: `Annotation non enregistrée : ${errorMessage(err)}`,
-        });
-        return loadAnnotations(sessionId);
+    store.dispatch({ type: "annotationSaved", sessionId, partId, annotation: { tags } });
+    enqueue(sessionId, () => backend.setAnnotation(sessionId, partId, tags).then(() => undefined));
+  }
+
+  /** Crée le tag (ou retrouve celui qui existe) puis le pose sur le moment. */
+  function addCustomTag(partId: string, label: string): void {
+    const sessionId = selectedGame(store.getState())?.sessionId;
+    if (!sessionId) return;
+    enqueue(sessionId, async () => {
+      const added = await backend.addCustomTag(label);
+      store.dispatch({ type: "customTagsLoaded", labels: added.labels });
+      const id = customTagId(added.label);
+      const current = store.getState().annotations[partId]?.tags ?? [];
+      const tags = current.includes(id) ? current : [...current, id];
+      store.dispatch({ type: "annotationSaved", sessionId, partId, annotation: { tags } });
+      await backend.setAnnotation(sessionId, partId, tags);
+    });
+  }
+
+  /** Cesse de proposer le tag ; les moments qui le portent le gardent. */
+  function removeCustomTag(label: string): void {
+    const sessionId = selectedGame(store.getState())?.sessionId ?? "";
+    enqueue(sessionId, async () => {
+      const labels = await backend.removeCustomTag(label);
+      store.dispatch({ type: "customTagsLoaded", labels });
+    });
+  }
+
+  function enqueue(sessionId: string, job: () => Promise<void>): void {
+    saveQueue = saveQueue.then(job).catch((err: unknown) => {
+      store.dispatch({
+        type: "notice",
+        message: `Annotation non enregistrée : ${errorMessage(err)}`,
       });
+      void loadCustomTags();
+      return sessionId ? loadAnnotations(sessionId) : undefined;
+    });
+  }
+
+  async function loadCustomTags(): Promise<void> {
+    try {
+      store.dispatch({ type: "customTagsLoaded", labels: await backend.getCustomTags() });
+    } catch {
+      // information secondaire : la liste reste celle qu'on avait
+    }
   }
 
   async function loadUltimate(sessionId: string): Promise<void> {
@@ -306,6 +343,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     .catch(() => undefined);
 
   void refresh();
+  void loadCustomTags();
 
   return {
     store,

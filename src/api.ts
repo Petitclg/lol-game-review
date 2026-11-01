@@ -3,6 +3,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createMockBackend } from "./mock";
 import type {
+  AddedCustomTag,
   Account,
   Annotation,
   Annotations,
@@ -29,8 +30,14 @@ export interface Backend {
   getAnnotations(sessionId: string): Promise<Annotations>;
   /** Tous les moments annotés, toutes parties confondues, du plus récent au plus ancien. */
   listAnnotatedMoments(): Promise<AnnotatedMoment[]>;
-  /** Enregistre l'annotation d'un moment (une annotation vide la supprime) et la renvoie telle que gardée. */
-  setAnnotation(sessionId: string, partId: string, tags: string[], note: string): Promise<Annotation>;
+  /** Enregistre les étiquettes d'un moment (aucune : l'annotation est supprimée) et les renvoie telles que gardées. */
+  setAnnotation(sessionId: string, partId: string, tags: string[]): Promise<Annotation>;
+  /** Tags personnalisés proposés sur tous les moments. */
+  getCustomTags(): Promise<string[]>;
+  /** Ajoute un tag personnalisé ; renvoie la liste et le texte à poser sur le moment (celui qui existait déjà, le cas échéant). */
+  addCustomTag(label: string): Promise<AddedCustomTag>;
+  /** Cesse de proposer un tag personnalisé ; les moments qui le portent le gardent. */
+  removeCustomTag(label: string): Promise<string[]>;
   deleteRecording(sessionId: string): Promise<void>;
   getStatus(): Promise<Status>;
   getSettings(): Promise<Settings>;
@@ -71,8 +78,11 @@ function createTauriBackend(): Backend {
     getClips: (sessionId) => invoke<Clip[]>("get_clips", { sessionId }),
     getAnnotations: (sessionId) => invoke<Annotations>("get_annotations", { sessionId }),
     listAnnotatedMoments: () => invoke<AnnotatedMoment[]>("list_annotated_moments"),
-    setAnnotation: (sessionId, partId, tags, note) =>
-      invoke<Annotation>("set_annotation", { sessionId, partId, tags, note }),
+    setAnnotation: (sessionId, partId, tags) =>
+      invoke<Annotation>("set_annotation", { sessionId, partId, tags }),
+    getCustomTags: () => invoke<string[]>("get_custom_tags"),
+    addCustomTag: (label) => invoke<AddedCustomTag>("add_custom_tag", { label }),
+    removeCustomTag: (label) => invoke<string[]>("remove_custom_tag", { label }),
     deleteRecording: (sessionId) => invoke<void>("delete_recording", { sessionId }),
     getStatus: () => invoke<Status>("get_status"),
     getSettings: () => invoke<Settings>("get_settings"),

@@ -3,6 +3,9 @@ import {
   DEATH_TAGS,
   PLAY_TAGS,
   TEAMFIGHT_TAGS,
+  cleanLabel,
+  customTagId,
+  isCustomTag,
   isEmptyAnnotation,
   tagDef,
   tagsFor,
@@ -52,6 +55,31 @@ describe("catalogue d'étiquettes", () => {
     expect(tagDef("greed").label).toBe("Greed");
     expect(tagDef("future_tag")).toEqual({ id: "future_tag", label: "future tag", tone: "neutral" });
   });
+
+  it("un tag personnalisé se lit par son texte, sans nuance", () => {
+    expect(tagDef("custom:mal placé")).toEqual({ id: "custom:mal placé", label: "mal placé", tone: "neutral" });
+    expect(isCustomTag("custom:x")).toBe(true);
+    expect(isCustomTag("greed")).toBe(false);
+    expect(customTagId("mal placé")).toBe("custom:mal placé");
+  });
+});
+
+describe("cleanLabel (texte d'un tag personnalisé)", () => {
+  it("retire les blancs de bord et réduit les blancs internes", () => {
+    expect(cleanLabel("  mal   placé \n")).toBe("mal placé");
+    expect(cleanLabel("Éclair ⚡ 100 %")).toBe("Éclair ⚡ 100 %");
+  });
+
+  it("refuse le vide, les caractères de contrôle et plus de 40 caractères (comptés comme le backend)", () => {
+    expect(cleanLabel("")).toBeNull();
+    expect(cleanLabel("   \t ")).toBeNull();
+    expect(cleanLabel("a\u0007b")).toBeNull();
+    expect(cleanLabel("x".repeat(41))).toBeNull();
+    expect(cleanLabel("x".repeat(40))).not.toBeNull();
+    expect(cleanLabel("é".repeat(40))).not.toBeNull();
+    expect(cleanLabel("😀".repeat(40))).not.toBeNull();
+    expect(cleanLabel("😀".repeat(41))).toBeNull();
+  });
 });
 
 describe("annotations", () => {
@@ -60,19 +88,19 @@ describe("annotations", () => {
     expect(toggleTag(["a", "b", "c"], "b")).toEqual(["a", "c"]);
   });
 
-  it("une annotation sans étiquette ni note (hors blancs) est vide", () => {
+  it("une annotation sans étiquette est vide", () => {
     expect(isEmptyAnnotation(undefined)).toBe(true);
-    expect(isEmptyAnnotation({ tags: [], note: "  " })).toBe(true);
-    expect(isEmptyAnnotation({ tags: ["greed"], note: "" })).toBe(false);
-    expect(isEmptyAnnotation({ tags: [], note: "x" })).toBe(false);
+    expect(isEmptyAnnotation({ tags: [] })).toBe(true);
+    expect(isEmptyAnnotation({ tags: ["greed"] })).toBe(false);
+    expect(isEmptyAnnotation({ tags: ["custom:à revoir"] })).toBe(false);
   });
 
   it("withAnnotation ajoute, remplace et retire sans modifier l'original", () => {
-    const base = { "death-1.0": { tags: ["greed"], note: "" } };
-    const added = withAnnotation(base, "kill-2.0", { tags: [], note: "joli" });
+    const base = { "death-1.0": { tags: ["greed"] } };
+    const added = withAnnotation(base, "kill-2.0", { tags: ["custom:joli"] });
     expect(Object.keys(added)).toEqual(["death-1.0", "kill-2.0"]);
-    expect(withAnnotation(added, "death-1.0", { tags: [], note: "" })).toEqual({
-      "kill-2.0": { tags: [], note: "joli" },
+    expect(withAnnotation(added, "death-1.0", { tags: [] })).toEqual({
+      "kill-2.0": { tags: ["custom:joli"] },
     });
     expect(Object.keys(base)).toEqual(["death-1.0"]);
   });

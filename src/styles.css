@@ -858,18 +858,6 @@ input[type="checkbox"]:focus-visible {
   border-color: var(--accent);
 }
 
-.annotation-note {
-  width: 100%;
-  resize: vertical;
-  padding: 0.4rem 0.5rem;
-  font: inherit;
-  font-size: 0.82rem;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
 .placeholder {
   padding: 2rem 1rem;
   text-align: center;
@@ -1229,15 +1217,6 @@ input[type="checkbox"]:focus-visible {
   gap: 0.25rem;
 }
 
-.am-note {
-  margin: 0;
-  padding: 0.4rem 0.6rem;
-  background: var(--bg-elev2);
-  border-radius: 6px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .am-list {
   display: flex;
   flex-direction: column;
@@ -1275,15 +1254,6 @@ input[type="checkbox"]:focus-visible {
   color: var(--muted);
 }
 
-.am-item-note {
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 .am-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1300,4 +1270,65 @@ input[type="checkbox"]:focus-visible {
 }
 .tag-chip.static.tone-good {
   border-color: var(--win);
+}
+
+/* Tags personnalisés */
+.custom-tags {
+  align-items: center;
+}
+
+.custom-chip {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.custom-chip .tag-chip {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.custom-chip .tag-chip:last-child {
+  border-radius: 999px;
+}
+
+.tag-remove {
+  padding: 0 0.45rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  cursor: pointer;
+}
+
+.tag-remove:hover,
+.tag-remove:focus-visible {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.custom-tag-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.custom-tag-input {
+  flex: 1 1 14rem;
+  max-width: 22rem;
+  padding: 0.3rem 0.5rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.custom-tag-message {
+  color: var(--warn);
 }

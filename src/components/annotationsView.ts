@@ -99,7 +99,7 @@ export function createAnnotationsView(backend: Backend, h: AnnotationsViewHandle
   const themeSel = el("select", { attrs: { id: "am-theme", "aria-label": "Type de moment" } });
   const tagSel = el("select", { attrs: { id: "am-tag", "aria-label": "Étiquette" } });
   const textInput = el("input", {
-    attrs: { type: "search", id: "am-text", placeholder: "Chercher dans les notes…", "aria-label": "Texte de la note" },
+    attrs: { type: "search", id: "am-text", placeholder: "Chercher un tag…", "aria-label": "Texte à chercher dans les tags" },
   });
   const resetBtn = el("button", {
     class: "btn btn-small",
@@ -120,7 +120,7 @@ export function createAnnotationsView(backend: Backend, h: AnnotationsViewHandle
     field("Issue", outcomeSel),
     field("Type", themeSel),
     field("Étiquette", tagSel),
-    field("Note", textInput),
+    field("Texte", textInput),
     resetBtn,
   ]);
 
@@ -280,7 +280,6 @@ export function createAnnotationsView(backend: Backend, h: AnnotationsViewHandle
                 !m.file && el("span", { class: "muted", text: " · clip indisponible" }),
               ]),
               tagChips(m.tags),
-              m.note && el("span", { class: "am-item-note", text: m.note }),
             ],
           ),
         ]);
@@ -301,7 +300,6 @@ export function createAnnotationsView(backend: Backend, h: AnnotationsViewHandle
     replaceChildren(nowPlaying, [
       el("h3", { class: "clip-title", text: gameLine(sel.game) }),
       el("p", { class: "small" }, [`${momentTitle(sel)} `, tagChips(sel.tags)]),
-      sel.note && el("p", { class: "am-note", text: sel.note }),
     ]);
     const key = momentKey(sel);
     if (key === playingKey) return;
@@ -337,7 +335,7 @@ export function createAnnotationsView(backend: Backend, h: AnnotationsViewHandle
     else if (error) messageEl.textContent = `Impossible de charger les annotations : ${error}`;
     else if (moments.length === 0) {
       messageEl.textContent =
-        "Aucune annotation pour l'instant. Annotez un moment depuis le lecteur de clips (étiquettes et note).";
+        "Aucune annotation pour l'instant. Annotez un moment depuis le lecteur de clips (étiquettes et tags personnalisés).";
     }
     body.hidden = moments.length === 0;
     filtersBar.hidden = moments.length === 0;

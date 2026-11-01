@@ -2,7 +2,16 @@
 
 Les étiquettes se posent sur un **moment** d'un clip (voir [ADR 0008](../adr/0008-clip-merging-and-annotations.md)). Le catalogue vit dans l'interface (`src/annotations.ts`) ; le backend ne stocke que les **identifiants**. Un identifiant ne change jamais (il est écrit sur le disque) ; seul le libellé peut évoluer.
 
-Format d'un identifiant : `a-z`, `0-9` et `_`, 48 caractères au plus. Au plus 24 étiquettes par moment, et une note libre de 2 000 caractères au plus.
+Format d'un identifiant : `a-z`, `0-9` et `_`, 48 caractères au plus. Au plus 24 étiquettes par moment.
+
+## Tags personnalisés
+
+À côté de ce catalogue, chaque moment propose les **tags personnalisés** de l'utilisateur (zone « Mes tags », champ « Nouveau tag personnalisé… »). Ils sont partagés par tous les moments de toutes les parties.
+
+- Texte de 1 à 40 caractères, sans caractère de contrôle, blancs normalisés ; stocké sous la forme `custom:<texte>`.
+- La croix ✕ d'un tag le retire de la liste proposée ; les moments qui le portent le gardent.
+- Ils sont filtrables, comptés et cherchés dans la vue « Annotations » comme les étiquettes du catalogue (nuance « constat »).
+- Les anciennes notes libres ont été converties en tags personnalisés ([ADR 0008](../adr/0008-clip-merging-and-annotations.md)).
 
 Nuance : **erreur** (rouge), **bon réflexe** (vert), **constat** (bleu, ni l'un ni l'autre).
 

@@ -16,7 +16,6 @@ pub struct AnnotatedMoment {
     pub label: String,
     pub game_time_secs: f64,
     pub tags: Vec<String>,
-    pub note: String,
     /// The clip showing the highlight (several highlights may share one merged clip).
     pub clip_id: Option<String>,
     /// Absolute path of the clip file, when it still exists.
@@ -70,7 +69,6 @@ pub fn list_annotated_moments(store: &SessionStore) -> Result<Vec<AnnotatedMomen
                 label,
                 game_time_secs,
                 tags: annotation.tags,
-                note: annotation.note,
                 clip_id,
                 file,
                 game: game.clone(),
@@ -179,14 +177,17 @@ mod tests {
             .unwrap();
         // the death shares a merged clip with the kill
         store
-            .set_annotation("a", "death-110.0", &tags(&["face_check"]), "trop avancé")
+            .set_annotation(
+                "a",
+                "death-110.0",
+                &tags(&["face_check", "custom:trop avancé"]),
+            )
             .unwrap();
         let moments = list_annotated_moments(&store).unwrap();
         assert_eq!(moments.len(), 1);
         let m = &moments[0];
         assert_eq!((m.theme, m.game_time_secs), (Theme::Death, 110.0));
-        assert_eq!(m.tags, ["face_check"]);
-        assert_eq!(m.note, "trop avancé");
+        assert_eq!(m.tags, ["face_check", "custom:trop avancé"]);
         assert_eq!(m.clip_id.as_deref(), Some("seq-0"));
         assert!(m.file.as_ref().is_some_and(|f| Path::new(f).is_file()));
         assert!(!m.label.is_empty());
@@ -202,13 +203,13 @@ mod tests {
         let store = SessionStore::new(dir.path());
         add_game(&store, "a", 1, false);
         store
-            .set_annotation("a", "key_moment-1234.5", &[], "ace")
+            .set_annotation("a", "key_moment-1234.5", &tags(&["custom:ace"]))
             .unwrap();
         store
-            .set_annotation("a", "bogus-1.0", &tags(&["greed"]), "")
+            .set_annotation("a", "bogus-1.0", &tags(&["greed"]))
             .unwrap();
         store
-            .set_annotation("a", "death-oops", &tags(&["greed"]), "")
+            .set_annotation("a", "death-oops", &tags(&["greed"]))
             .unwrap();
         let moments = list_annotated_moments(&store).unwrap();
         assert_eq!(moments.len(), 1, "ids that are not highlights are ignored");
@@ -227,7 +228,7 @@ mod tests {
         let store = SessionStore::new(dir.path());
         add_game(&store, "a", 1, true);
         store
-            .set_annotation("a", "kill-300.0", &tags(&["good_trade"]), "")
+            .set_annotation("a", "kill-300.0", &tags(&["good_trade"]))
             .unwrap();
         let file = list_annotated_moments(&store).unwrap()[0]
             .file
@@ -258,10 +259,10 @@ mod tests {
             .unwrap();
         for id in ["old", "new", "unknown"] {
             store
-                .set_annotation(id, "kill-300.0", &tags(&["good_trade"]), "")
+                .set_annotation(id, "kill-300.0", &tags(&["good_trade"]))
                 .unwrap();
             store
-                .set_annotation(id, "kill-100.0", &tags(&["good_trade"]), "")
+                .set_annotation(id, "kill-100.0", &tags(&["good_trade"]))
                 .unwrap();
         }
         let order: Vec<_> = list_annotated_moments(&store)
