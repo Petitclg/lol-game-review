@@ -1,14 +1,14 @@
-//! Reads the ability icons of the in-game HUD from a recording.
+//! Reads the ability and summoner-spell icons of the in-game HUD from a recording.
 //!
-//! Only keyframes are decoded (the recorder emits one per second) and only the row of
-//! the four ability icons is kept, so analysing a whole game takes a few seconds of
-//! low-priority CPU and never touches the game.
+//! Only keyframes are decoded (the recorder emits one per second) and only the icons
+//! are kept (Q, W, E, R, then the two summoner spells), so analysing a whole game takes
+//! a few seconds of low-priority CPU and never touches the game.
 //!
-//! The row is read for several candidate HUD scales at once (one ffmpeg pass); the
+//! The icons are read for several candidate HUD scales at once (one ffmpeg pass); the
 //! caller picks the scale whose icons actually show cooldown digits. The base geometry
 //! was measured on a 2560x1440 recording at the smallest HUD scale and is expressed in
-//! units of the frame height, so it scales with the resolution. The row is anchored at
-//! the bottom centre of the frame, like the HUD itself.
+//! units of the frame height, so it scales with the resolution. Everything is anchored
+//! at the bottom centre of the frame, like the HUD itself.
 
 use crate::ffmpeg::silent_command;
 use std::ffi::OsString;
@@ -23,12 +23,27 @@ const ICON_H: f64 = 0.0358;
 /// Distance from the bottom of the frame to the vertical centre of the icon row (scale 1.0).
 const CENTER_FROM_BOTTOM: f64 = 0.0632;
 
+/// Side of a summoner-spell icon, smaller than an ability icon (scale 1.0).
+const SUMMONER_SIZE: f64 = 0.0271;
+/// Horizontal offsets of the centres of the two summoner-spell icons (spell one, spell
+/// two) from the centre of the frame (scale 1.0).
+const SUMMONER_X: [f64; 2] = [0.04035, 0.07125];
+/// Distance from the bottom of the frame to the centre of the summoner icons (scale 1.0).
+const SUMMONER_FROM_BOTTOM: f64 = 0.0668;
+
 /// Candidate HUD scales relative to the measured geometry.
 pub const SCALES: [f64; 11] = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2.0];
 
 /// Each icon cell of the extracted image is `CELL` x `CELL` pixels.
 const CELL: usize = 32;
-const FRAME_W: usize = CELL * 4;
+/// Number of icons read: Q, W, E, R, summoner spell one, summoner spell two.
+pub const ICONS: usize = 6;
+/// Values per second: one digit ratio per icon, then the brightness of the two
+/// summoner-spell icons.
+pub const COLUMNS: usize = ICONS + 2;
+/// Cells of the two summoner-spell icons.
+const SUMMONER_CELLS: [usize; 2] = [4, 5];
+const FRAME_W: usize = CELL * ICONS;
 /// Index of the ultimate (R) cell, the fourth icon.
 pub const ULTIMATE_CELL: usize = 3;
 
@@ -43,8 +58,8 @@ fn frame_bytes(candidates: usize) -> usize {
     FRAME_W * CELL * candidates
 }
 
-/// `filter_complex` producing one image per second made of the ability row of every
-/// candidate scale, stacked vertically.
+/// `filter_complex` producing one image per second made of the icons of every candidate
+/// scale (Q, W, E, R, then the two summoner spells), stacked vertically.
 fn filter_complex(scales: &[f64]) -> String {
     let n = scales.len();
     let labels = |prefix: char| -> String {
@@ -54,30 +69,48 @@ fn filter_complex(scales: &[f64]) -> String {
             .concat()
     };
     let split_outputs = labels('v');
-    let crops: Vec<String> = scales
+    let candidates: Vec<String> = scales
         .iter()
         .enumerate()
         .map(|(i, s)| {
             let pitch = PITCH * s;
             let icon = ICON_H * s;
+            let size = SUMMONER_SIZE * s;
+            let summoner = |slot: usize| {
+                format!(
+                    "[s{i}{slot}]crop=w={size}*in_h:h={size}*in_h:\
+                     x=in_w/2+{x}*in_h-{half}*in_h:\
+                     y=in_h-{from_bottom}*in_h-{half}*in_h,\
+                     scale={CELL}:{CELL}:flags=area,format=gray[d{i}{slot}]",
+                    x = SUMMONER_X[slot] * s,
+                    half = size / 2.0,
+                    from_bottom = SUMMONER_FROM_BOTTOM * s
+                )
+            };
             format!(
-                "[v{i}]crop=w=4*{pitch}*in_h:h={icon}*in_h:x=in_w/2-3.5*{pitch}*in_h:\
+                "[v{i}]split=3[a{i}][s{i}0][s{i}1];\
+                 [a{i}]crop=w=4*{pitch}*in_h:h={icon}*in_h:x=in_w/2-3.5*{pitch}*in_h:\
                  y=in_h-{from_bottom}*in_h-{half}*in_h,\
-                 scale={FRAME_W}:{CELL}:flags=area,format=gray,fps=1[c{i}]",
+                 scale={w}:{CELL}:flags=area,format=gray[q{i}];\
+                 {d0};{d1};\
+                 [q{i}][d{i}0][d{i}1]hstack=inputs=3,fps=1[c{i}]",
                 from_bottom = CENTER_FROM_BOTTOM * s,
-                half = icon / 2.0
+                half = icon / 2.0,
+                w = CELL * 4,
+                d0 = summoner(0),
+                d1 = summoner(1)
             )
         })
         .collect();
     let stacked_inputs = labels('c');
     format!(
         "[0:v]split={n}{split_outputs};{};{stacked_inputs}vstack=inputs={n}[o]",
-        crops.join(";")
+        candidates.join(";")
     )
 }
 
-/// ffmpeg arguments writing, for each keyframe second, the ability row of every
-/// candidate scale as raw gray frames.
+/// ffmpeg arguments writing, for each keyframe second, the icons of every candidate
+/// scale as raw gray frames.
 #[must_use]
 pub fn row_args(recording: &Path, scales: &[f64]) -> Vec<OsString> {
     let mut a: Vec<OsString> = ["-hide_banner", "-loglevel", "error", "-threads", "2"]
@@ -106,13 +139,34 @@ pub fn digit_ratio(frame: &[u8], candidate: usize, cell: usize) -> f32 {
     white as f32 / total as f32
 }
 
-/// For each candidate scale, then each second of the recording, the digit ratio of the
-/// four ability icons (Q, W, E, R).
+/// Mean brightness (0 to 1) of a whole icon cell of one candidate.
+///
+/// A summoner spell on cooldown is covered by a dark overlay, whereas the white of its
+/// ready icon (Flash has bright streaks) makes a white-pixel count useless for it.
+#[must_use]
+pub fn cell_brightness(frame: &[u8], candidate: usize, cell: usize) -> f32 {
+    let mut sum = 0u32;
+    for y in 0..CELL {
+        let start = (candidate * CELL + y) * FRAME_W + cell * CELL;
+        sum += frame[start..start + CELL]
+            .iter()
+            .map(|&v| u32::from(v))
+            .sum::<u32>();
+    }
+    sum as f32 / (CELL * CELL * 255) as f32
+}
+
+/// Values read for one second of video: the digit ratio of each of the six icons (Q, W,
+/// E, R, summoner spell one, summoner spell two), then the brightness of the two
+/// summoner-spell icons.
+pub type Row = [f32; COLUMNS];
+
+/// For each candidate scale, then each second of the recording, the [`Row`] read.
 pub fn extract_digit_ratios(
     ffmpeg: &Path,
     recording: &Path,
     scales: &[f64],
-) -> io::Result<Vec<Vec<[f32; 4]>>> {
+) -> io::Result<Vec<Vec<Row>>> {
     let mut cmd = silent_command(ffmpeg);
     cmd.args(row_args(recording, scales))
         .stdin(Stdio::null())
@@ -124,11 +178,15 @@ pub fn extract_digit_ratios(
         .ok_or_else(|| io::Error::other("no ffmpeg output"))?;
 
     let mut frame = vec![0u8; frame_bytes(scales.len())];
-    let mut out: Vec<Vec<[f32; 4]>> = vec![Vec::new(); scales.len()];
+    let mut out: Vec<Vec<Row>> = vec![Vec::new(); scales.len()];
     while read_frame(&mut stdout, &mut frame)? {
         for (candidate, series) in out.iter_mut().enumerate() {
-            series.push(std::array::from_fn(|cell| {
-                digit_ratio(&frame, candidate, cell)
+            series.push(std::array::from_fn(|column| {
+                if column < ICONS {
+                    digit_ratio(&frame, candidate, column)
+                } else {
+                    cell_brightness(&frame, candidate, SUMMONER_CELLS[column - ICONS])
+                }
             }));
         }
     }
@@ -196,17 +254,63 @@ mod tests {
     }
 
     #[test]
-    fn the_filter_stacks_one_crop_per_candidate_scaled_to_the_frame_height() {
+    fn the_filter_stacks_one_row_of_six_icons_per_candidate_scaled_to_the_frame_height() {
         let fc = filter_complex(&[1.0, 1.5]);
         assert!(fc.starts_with("[0:v]split=2[v0][v1];"));
         assert!(fc.ends_with("[c0][c1]vstack=inputs=2[o]"));
-        assert_eq!(fc.matches("crop=").count(), 2);
+        // per candidate: the ability row and the two summoner icons
+        assert_eq!(fc.matches("crop=").count(), 6);
+        assert_eq!(fc.matches("hstack=inputs=3").count(), 2);
         assert!(
             fc.contains("in_h"),
             "geometry must scale with the frame height"
         );
         // the larger candidate crops a larger area
         assert!(fc.contains("w=4*0.04076*in_h") && fc.contains("w=4*0.06114*in_h"));
+    }
+
+    #[test]
+    fn summoner_icons_sit_right_of_the_ultimate_and_scale_with_the_candidate() {
+        let fc = filter_complex(&[1.0]);
+        assert!(fc.contains("x=in_w/2+0.04035*in_h-0.01355*in_h"), "{fc}");
+        assert!(fc.contains("x=in_w/2+0.07125*in_h-0.01355*in_h"), "{fc}");
+        let big = filter_complex(&[2.0]);
+        assert!(big.contains("x=in_w/2+0.0807*in_h-0.0271*in_h"), "{big}");
+    }
+
+    #[test]
+    fn the_summoner_cells_follow_the_ability_cells() {
+        assert_eq!(ICONS, 6);
+        assert_eq!(FRAME_W, 6 * CELL);
+        let mut f = blank(1);
+        put_digits(&mut f, 0, 5);
+        assert!(digit_ratio(&f, 0, 5) > 0.5);
+        assert!(digit_ratio(&f, 0, 4).abs() < f32::EPSILON);
+        assert!(digit_ratio(&f, 0, ULTIMATE_CELL).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn brightness_is_the_mean_of_the_cell_alone() {
+        let mut f = vec![0u8; frame_bytes(2)];
+        for y in 0..CELL {
+            for x in 0..CELL {
+                f[(CELL + y) * FRAME_W + 4 * CELL + x] = 255;
+                f[y * FRAME_W + 5 * CELL + x] = 51;
+            }
+        }
+        assert!((cell_brightness(&f, 1, 4) - 1.0).abs() < 1e-6);
+        assert!((cell_brightness(&f, 0, 5) - 0.2).abs() < 1e-6);
+        assert!(
+            cell_brightness(&f, 0, 4).abs() < 1e-6,
+            "another candidate's cell"
+        );
+        assert!(cell_brightness(&f, 1, 3).abs() < 1e-6, "another cell");
+    }
+
+    #[test]
+    fn a_row_has_six_digit_ratios_then_two_brightnesses() {
+        assert_eq!(COLUMNS, 8);
+        assert_eq!(SUMMONER_CELLS, [4, 5]);
     }
 
     #[test]

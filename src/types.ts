@@ -1,4 +1,12 @@
-export type Theme = "kill" | "death" | "assist" | "ultimate" | "objective" | "turret";
+export type Theme =
+  | "kill"
+  | "death"
+  | "assist"
+  | "ultimate"
+  | "flash"
+  | "key_moment"
+  | "objective"
+  | "turret";
 
 export interface Account {
   riotId: string;

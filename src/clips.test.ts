@@ -19,7 +19,8 @@ describe("thème « ultimate »", () => {
     expect(filterClips(clips, "all")).toHaveLength(8);
   });
   it("isTheme accepte les thèmes connus et rejette le reste", () => {
-    for (const t of ["kill", "death", "assist", "ultimate", "objective", "turret"]) expect(isTheme(t)).toBe(true);
+    for (const t of ["kill", "death", "assist", "ultimate", "flash", "key_moment", "objective", "turret"])
+      expect(isTheme(t)).toBe(true);
     for (const t of ["inconnu", "", null, undefined, 3]) expect(isTheme(t)).toBe(false);
   });
   it("un thème inconnu du backend ne casse ni les compteurs ni les groupes", () => {
@@ -74,9 +75,33 @@ describe("countByTheme / groupByTheme", () => {
       death: 1,
       assist: 1,
       ultimate: 0,
+      flash: 0,
+      key_moment: 0,
       objective: 1,
       turret: 1,
     });
+  });
+  it("compte et groupe les flashs et les moments clés", () => {
+    const clips = [
+      makeClip("f1", "flash", 500),
+      makeClip("f2", "flash", 100),
+      makeClip("m1", "key_moment", 900),
+    ];
+    expect(countByTheme(clips)).toMatchObject({ all: 3, flash: 2, key_moment: 1 });
+    expect(filterClips(clips, "flash").map((c) => c.id)).toEqual(["f2", "f1"]);
+    expect(groupByTheme(clips).key_moment.map((c) => c.id)).toEqual(["m1"]);
+    expect(THEME_TABS.map((t) => t.id)).toEqual(expect.arrayContaining(["flash", "key_moment"]));
+  });
+  it("les données simulées contiennent des flashs (lanceur seul) et des moments clés", () => {
+    const game = {
+      gameId: 7001, createdMs: 0, durationSecs: 1812, queueId: 420, championId: 103, kills: 9,
+      deaths: 3, assists: 11, win: true, sessionId: "s", clipsReady: false, hasRecording: true,
+    };
+    const mock = buildMockClips(game);
+    const flashes = filterClips(mock, "flash");
+    expect(flashes.length).toBeGreaterThan(0);
+    for (const c of flashes) expect(c.involved).toEqual([{ name: "Invocateur#EUW", roles: ["caster"] }]);
+    expect(filterClips(mock, "key_moment").length).toBeGreaterThan(0);
   });
   it("groupe chaque thème trié", () => {
     const groups = groupByTheme(SAMPLE_CLIPS);

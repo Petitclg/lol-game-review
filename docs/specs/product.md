@@ -10,8 +10,8 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 |----|----------|
 | F1 | Détecter le compte actif du client LoL (LCU, `lockfile`). |
 | F2 | Lister les parties récentes avec un résumé (champion, résultat, KDA, durée). |
-| F3 | Choisir une partie et générer l'analyse de ses clips. |
-| F4 | Clips par thème : kills, morts, assists, objectifs, tours, ultimates. |
+| F3 | Choisir une partie et générer l'analyse de ses clips. Régénérer recoupe les clips dont la fenêtre a changé et réutilise les autres. |
+| F4 | Clips par thème : kills, morts, assists, objectifs, tours, ultimates, Flashs, moments clés (aces, gros écarts d'or). |
 | F5 | Chaque clip montre l'action du joueur. |
 | F6 | Chaque clip expose les items, le niveau, le KDA et les sorts d'invocateur du joueur, des alliés et des adversaires, et analyse les joueurs impliqués dans le moment : niveaux d'avance, avance de valeur d'items, Flash équipé. Les cooldowns sont hors périmètre (décision du 2026-10-28). |
 | F7 | Mise à jour automatique vers la dernière release au démarrage. |
@@ -29,7 +29,8 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 ## Contraintes techniques connues
 
 1. **Source vidéo.** Les parties passées ne sont pas filmées. Les clips viennent d'un enregistrement léger fait pendant la partie ; les parties jouées avant l'installation n'ont que le résumé (voir [ADR 0001](../adr/0001-recording-during-game.md)).
-2. **Ultimates (F4).** Aucune API Riot n'expose les lancements de sorts. Les ultimates du joueur local sont détectés dans la vidéo enregistrée (chiffres de cooldown de l'icône), voir [ADR 0003](../adr/0003-ultimate-detection.md). Ceux des autres joueurs ne le sont pas (et la politique Riot interdit de suivre les cooldowns d'ultimates ennemis).
+2. **Ultimates et Flash (F4).** Aucune API Riot n'expose les lancements de sorts. Les ultimates et les Flashs du joueur local sont détectés dans la vidéo enregistrée (chiffres de cooldown de l'icône), voir [ADR 0003](../adr/0003-ultimate-detection.md). Ceux des autres joueurs ne le sont pas (et la politique Riot interdit de suivre les cooldowns d'ultimates ennemis). Le Flash n'a un clip que si l'emplacement du sort est connu (sessions enregistrées avec ses identifiants de sorts).
+2. bis. **Moments clés (F4).** Un ace vient de l'événement `Ace`. Riot ne donne pas l'or des autres joueurs : un « écart d'or » est **estimé** à partir des événements qui rapportent un montant connu à une équipe (kills, tours, inhibiteurs, Baron), voir [ADR 0007](../adr/0007-key-moments.md). Ces clips ne concernent pas forcément le joueur.
 3. **Cooldowns (F6).** Retirés : la Live Client API ne donne ni lancements de sorts ni cooldowns restants, seule une estimation était possible.
 4. **Anti-cheat Vanguard.** Validé sur une partie réelle (v0.1) : la capture `ddagrab` + NVENC fonctionne en jeu, à environ 5 Mbit/s en 1440p30, priorité *BelowNormal*, charge CPU négligeable. À confirmer sur d'autres configurations (AMD, Intel, plein écran exclusif).
 5. **Clé API Riot.** Non requise au MVP. Match-V5 est un fournisseur optionnel ultérieur.
@@ -46,4 +47,6 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 | Interface Tauri, zone de notification | fait |
 | CI/CD, release signée, mise à jour automatique | fait (première release à publier) |
 | Ultimates du joueur (F4), par analyse vidéo | fait, validé sur 2 enregistrements |
-| Flash du joueur, démarrage avec Windows | à faire |
+| Flash du joueur (F4), par analyse vidéo | fait |
+| Moments clés (F4) : aces, écarts d'or estimés | fait |
+| Démarrage avec Windows | à faire |

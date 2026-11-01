@@ -185,7 +185,10 @@ function mockInvolved(theme: Theme, n: number, players: PlayerSnapshot[]): Invol
         { name: name(enemy), roles: ["victim"] },
       ];
     case "ultimate":
+    case "flash":
       return [{ name: name(0), roles: ["caster"] }];
+    case "key_moment":
+      return [{ name: name(1 + (n % 4)), roles: ["killer"] }];
     default:
       return [
         { name: name(0), roles: ["killer"] },
@@ -233,19 +236,33 @@ const LABELS: Record<Theme, string[]> = {
   death: ["Mort"],
   assist: ["Assist"],
   ultimate: ["Ultimate"],
+  flash: ["Flash"],
+  key_moment: ["Ace de votre équipe", "Ace adverse", "Écart d'or +1 800", "Écart d'or −1 500"],
   objective: ["Dragon", "Baron Nashor", "Héraut"],
   turret: ["Tour", "Inhibiteur"],
 };
 
 export function buildMockClips(game: GameEntry): Clip[] {
   const rand = rng(game.gameId);
-  // « ultimate » en dernier pour ne pas modifier la séquence pseudo-aléatoire des autres clips
-  const themes: Theme[] = ["kill", "death", "assist", "objective", "turret", "ultimate"];
+  // « ultimate », « flash » et « key_moment » en dernier pour ne pas modifier la séquence
+  // pseudo-aléatoire des autres clips
+  const themes: Theme[] = [
+    "kill",
+    "death",
+    "assist",
+    "objective",
+    "turret",
+    "ultimate",
+    "flash",
+    "key_moment",
+  ];
   const counts: Record<Theme, number> = {
     kill: Math.max(1, Math.min(6, game.kills)),
     death: Math.max(1, Math.min(5, game.deaths)),
     assist: Math.max(1, Math.min(6, Math.round(game.assists / 2))),
     ultimate: 3,
+    flash: 4,
+    key_moment: 2,
     objective: 3,
     turret: 2,
   };
@@ -287,12 +304,12 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export function createMockBackend(): Backend {
   const now = Date.now();
   const games = buildGames(now);
-  // sessions dont l'interface du jeu n'est pas reconnue : aucun ultimate généré
+  // sessions dont l'interface du jeu n'est pas reconnue : ni ultimate ni flash générés
   const unrecognized = new Set(["mock-session-7000"]);
   const clipsFor = (game: GameEntry): Clip[] => {
     const clips = buildMockClips(game);
     return game.sessionId && unrecognized.has(game.sessionId)
-      ? clips.filter((c) => c.theme !== "ultimate")
+      ? clips.filter((c) => c.theme !== "ultimate" && c.theme !== "flash")
       : clips;
   };
   const generated = new Map<string, Clip[]>();

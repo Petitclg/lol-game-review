@@ -142,6 +142,7 @@ mod tests {
                     recognized: true,
                     hud_scale: Some(1.0),
                     casts: vec![],
+                    summoner_casts: Some([vec![], vec![]]),
                 },
             )
             .unwrap();

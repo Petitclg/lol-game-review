@@ -1,4 +1,4 @@
-# ADR 0003 — Ultimates détectés par analyse de l'interface enregistrée
+# ADR 0003 — Ultimates et Flash détectés par analyse de l'interface enregistrée
 
 - Statut : accepté
 - Date : 2026-10-29
@@ -30,16 +30,35 @@ Sur deux enregistrements réels (Qiyana), les lancements détectés sont espacé
 
 La géométrie (pas entre icônes 0,04076, hauteur d'icône 0,0358, rangée à 0,0632 du bas, en unités de hauteur d'écran) a été mesurée à l'échelle d'interface 1,0. Comme la correspondance entre le réglage du jeu et cette échelle n'est pas connue, l'échelle est **calibrée sur chaque enregistrement** :
 
-- une seule passe ffmpeg (`split` / `crop` / `vstack`) extrait la rangée d'icônes pour 11 échelles candidates (0,8 à 2,0) ;
-- pour chaque candidat, un score compte les épisodes de cooldown vus sur Q, W et E (ils se lancent bien plus souvent que l'ultimate) ;
-- on retient le centre du plateau des candidats dont le score atteint 0,7 × le meilleur, à condition d'avoir au moins 5 épisodes et une marge de 2× sur les candidats hors du voisinage ;
+- une seule passe ffmpeg (`split` / `crop` / `hstack` / `vstack`) extrait les icônes pour 11 échelles candidates (0,8 à 2,0) ;
+- pour chaque candidat, le score est la **masse des chiffres** vus sur Q, W et E : la somme des ratios de pixels blancs sur toutes les secondes où des chiffres sont visibles, multipliée par l'échelle² (un candidat plus petit recadre plus serré et agrandit les chiffres de 1/échelle²) ;
+- on retient le centre du plateau des candidats dont le score atteint 0,7 × le meilleur, à condition que le meilleur ait au moins 5 épisodes et une marge de 2× sur les candidats hors du voisinage ;
 - sinon la partie est marquée **« interface non reconnue »** (`UltimateStatus.state = unrecognized`) : le résultat négatif est mis en cache, l'interface l'affiche, et aucun clip d'ultimate n'est inventé.
 
-Les tests `crates/engine/tests/hud_calibration.rs` utilisent des vidéos synthétiques (traits fins de 2,5 unités) en 1080p, 1440p à l'échelle 1,3, 720p à 1,5, ultrawide 3440×1440 et sans interface. Sur 6 enregistrements réels (2560×1440, sans bordure), la calibration choisit toujours l'échelle 1,0 avec une grande marge, et les lancements trouvés sont identiques à ceux de la version à échelle fixe.
+**Pourquoi la masse et non le nombre d'épisodes (correction du 2026-11-01).** Le nombre d'épisodes était le premier score. Sur vos enregistrements récents, il se trompait : un candidat voisin voit le bord de grands chiffres et compte presque autant d'épisodes (75 contre 105), ce qui rendait la calibration ambiguë et refusait l'interface. Sur deux parties il choisissait même une mauvaise échelle (1,1 ou 1,2 au lieu de 1,0 ; mesuré à l'écran : icône R de 52 px de large, soit 0,0358 × 1440). La masse sépare nettement mieux : 157 contre 81 et 53 sur la partie qui échouait. Avec la masse, la calibration choisit 1,0 sur 4 des 5 enregistrements restants ; le cinquième ne démarre pas sur un écran de chargement et n'est pas reconnu. Les analyses enregistrées par une ancienne version (sans sorts d'invocateur) sont refaites à la prochaine génération si la vidéo existe encore.
+
+Les tests `crates/engine/tests/hud_calibration.rs` utilisent des vidéos synthétiques (traits fins de 2,5 unités) en 1080p, 1440p à l'échelle 1,3, 720p à 1,5, ultrawide 3440×1440 et sans interface. À 720p, une cellule de 32×32 est construite à partir d'environ 38 pixels dessinés sur des pixels entiers : on y accepte un candidat voisin de l'échelle vraie.
+
+## Flash et sorts d'invocateur
+
+Les sorts d'invocateur D et F sont lus avec la même géométrie (icônes de 0,0271 de la hauteur d'écran, centres à +0,04035 et +0,07125 du centre, à 0,0668 du bas), mesurée sur une capture réelle.
+
+**Les chiffres ne permettent pas de les suivre** : l'icône prête du Flash contient elle-même des traînées blanches ; la fraction de pixels clairs est la même avec et sans chiffres (≈ 0,08 à 0,11). Le cooldown **assombrit** en revanche l'icône (luminosité moyenne ≈ 0,42 contre 0,54 quand elle est prête). Un lancer est donc le début d'un assombrissement qui dure au moins 90 s :
+
+- niveau « prêt » : 90e percentile de la luminosité de l'icône après le début de la partie (l'écran de chargement n'est pas le HUD) ; assombri : sous 92 % de ce niveau ; il faut au moins 8 % d'écart entre le niveau prêt et le niveau le plus sombre ;
+- 2 échantillons sombres pour confirmer, 3 clairs pour terminer (un éclair isolé ne coupe pas un cooldown) ;
+- moins de 90 s est autre chose : HUD grisé d'une mort, sort désactivé (croix rouge), effet d'écran. Un cooldown déjà en cours au début de la partie n'est pas un lancer ;
+- l'estimation du lancer est la première seconde sombre − 0,5 s.
+
+Quel emplacement porte le Flash ? Les identifiants de sorts sont enregistrés dans l'ordre (`spell_keys`) : le Flash est l'emplacement où se trouve `SummonerFlash`. Sans les deux identifiants, l'emplacement est inconnu et aucun clip Flash n'est produit.
+
+**Validation sur de vraies parties.** Sur la partie de Cho'Gath, le Flash est détecté à 226,5 s de vidéo et la vidéo affiche « 227 » (secondes restantes) à 300 s : cooldown de 300,5 s, celui du Flash. Les écarts entre lancers sur 3 parties (270 à 400 s) sont cohérents avec ce cooldown. Dans le clip généré, l'icône D passe de « prête » à « 300 » à 6 s du début, comme prévu.
 
 ## Limites
 
 - Précision de ±0,5 s : les images clés tombent chaque seconde, et l'apparition des chiffres est située au milieu de la seconde précédant leur première observation (mesuré : chiffres réellement apparus à 400,2 s, vus à l'échantillon 401, estimation 400,5). La fenêtre du clip (5 s avant, 11 s après) l'absorbe largement.
 - La géométrie suppose la disposition par défaut de l'interface (rangée de sorts centrée en bas) : seule l'échelle varie. Une autre disposition donnera « interface non reconnue ». Le 1080p, l'ultrawide et les autres échelles ne sont validés que sur des vidéos synthétiques.
-- Seuls **vos** ultimates sont détectés (c'est ce qui est visible dans votre interface). Un ultimate qui ne se lance pas (pas de mana, silence) n'affiche pas de cooldown et n'est pas compté.
-- Les mêmes principes permettraient de détecter les lancements de Flash du joueur (icône du sort d'invocateur), non fait à ce stade.
+- Seuls **vos** ultimates et **vos** Flashs sont détectés (c'est ce qui est visible dans votre interface). Un ultimate qui ne se lance pas (pas de mana, silence) n'affiche pas de cooldown et n'est pas compté.
+- Le Flash d'une partie dont la vidéo source a été supprimée ne peut plus être détecté.
+- Un Flash lancé juste après un sort désactivé (croix rouge) peut être daté 1 à 2 s trop tôt.
+- Les lancers de sorts d'invocateur à cooldown court (Smite, moins de 90 s) ne sont pas détectés.

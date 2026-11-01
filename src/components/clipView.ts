@@ -25,6 +25,8 @@ export const THEME_NAMES: Record<Clip["theme"], string> = {
   death: "Mort",
   assist: "Assist",
   ultimate: "Ultimate",
+  flash: "Flash",
+  key_moment: "Moment clé",
   objective: "Objectif",
   turret: "Tour",
 };

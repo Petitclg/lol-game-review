@@ -206,10 +206,7 @@ mod tests {
             event_id: 9,
             event_name: "GameEnd".into(),
             event_time: 1800.0,
-            killer_name: None,
-            victim_name: None,
-            assisters: vec![],
-            dragon_type: None,
+            ..RawLiveEvent::default()
         });
         assert!(d.has_game_ended());
     }

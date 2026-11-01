@@ -1,6 +1,6 @@
 # LoL Game Review
 
-Application de bureau Windows (Tauri) pour revoir les moments forts de ses parties de League of Legends : kills, morts, assists, objectifs et tours, avec les items et les rangs de sorts au moment de l'action.
+Application de bureau Windows (Tauri) pour revoir les moments forts de ses parties de League of Legends : kills, morts, assists, objectifs, tours, ultimates, Flashs et moments clés (aces, gros écarts d'or), avec les items et les rangs de sorts au moment de l'action.
 
 ## Fonctionnement
 
@@ -15,7 +15,8 @@ Seules les parties jouées **pendant que l'application tourne** ont une vidéo (
 
 ## Limites connues
 
-- Les ultimates ne sont détectés que pour **vous**, par analyse de l'interface enregistrée ([ADR 0003](docs/adr/0003-ultimate-detection.md)) : aucune API Riot n'expose les lancements de sorts. L'échelle de l'interface est calibrée automatiquement ; si elle n'est pas reconnue, l'application l'indique au lieu d'inventer des clips.
+- Les ultimates et les Flashs ne sont détectés que pour **vous**, par analyse de l'interface enregistrée ([ADR 0003](docs/adr/0003-ultimate-detection.md)) : aucune API Riot n'expose les lancements de sorts. L'échelle de l'interface est calibrée automatiquement ; si elle n'est pas reconnue, l'application l'indique au lieu d'inventer des clips. Le Flash n'est pas détecté pour une partie dont la vidéo a été supprimée.
+- Les moments clés ([ADR 0007](docs/adr/0007-key-moments.md)) sont un ace, ou un « écart d'or » **estimé** : Riot ne donne pas l'or des autres joueurs, il est évalué à partir des kills, tours, inhibiteurs et du Baron (montants approximatifs). Ces clips ne concernent pas forcément votre personnage. L'équipe et l'auteur d'un ace ne sont connus que pour les parties enregistrées avec cette version.
 - Stockage ([ADR 0004](docs/adr/0004-capture-and-storage-budget.md)) : environ 1 Go par partie enregistrée. Le panneau « Stockage » permet de supprimer la vidéo après les clips, de compresser les clips (environ −45 %, en tâche de fond hors partie) et de fixer un plafond (20 Go par défaut, la plus ancienne partie est supprimée d'abord).
 - La fenêtre du jeu est capturée sur n'importe quel écran (repli sur l'écran principal). Non validé sous Riot Vanguard en partie réelle.
 - Les cooldowns ne sont pas affichés (abandonnés pour cette version) : seuls les items, le niveau, le KDA et les sorts d'invocateur de chaque joueur le sont.

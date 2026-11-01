@@ -2,7 +2,7 @@
 
 use lgr_core::clips::ClipConfig;
 use lgr_core::loading::{anchor_from_loading_end, frame_diffs, loading_end_secs};
-use lgr_core::session::{build_clips_with, Clip, Session};
+use lgr_core::session::{build_clips_with, Casts, Clip, Session};
 use lgr_core::store::{SessionStore, StoreError, UltimateRecord};
 use lgr_core::ultimate::detect_ultimates;
 use serde::Serialize;
@@ -45,6 +45,8 @@ pub enum UltimateOutcome {
     /// The game interface was located; casts are in video seconds.
     Recognized {
         casts_video_secs: Vec<f64>,
+        /// Casts of summoner spell one and two.
+        summoner_casts_video_secs: [Vec<f64>; 2],
         hud_scale: f64,
     },
     /// The interface could not be located (unusual scale, layout, or hidden HUD).
@@ -73,9 +75,17 @@ impl UltimateDetector for HudUltimateDetector {
         let scales = lgr_media::SCALES;
         let rows = lgr_media::extract_digit_ratios(&self.ffmpeg, recording, &scales)
             .map_err(|e| e.to_string())?;
-        Ok(match detect_ultimates(&rows) {
+        // Where the game starts matters for the summoner spells; if it cannot be told the
+        // whole video is read.
+        let game_start = self
+            .loading_end_secs(recording)
+            .ok()
+            .flatten()
+            .map_or(0, |secs| secs as usize);
+        Ok(match detect_ultimates(&rows, &scales, game_start) {
             Some(d) => UltimateOutcome::Recognized {
                 casts_video_secs: d.casts_video_secs,
+                summoner_casts_video_secs: d.summoner_casts_video_secs,
                 hud_scale: scales[d.candidate],
             },
             None => UltimateOutcome::Unrecognized,
@@ -138,44 +148,58 @@ fn verified_session(
     session
 }
 
-/// Ultimate casts of a session in game time. The outcome is cached (including
-/// "interface not recognised"), so the video is analysed once; a failed analysis is
-/// not cached and is retried next time.
-fn ultimate_casts(
-    store: &SessionStore,
-    detector: &dyn UltimateDetector,
-    session: &Session,
-) -> Vec<f64> {
-    if let Ok(Some(cached)) = store.load_ultimates(&session.id) {
-        return cached.casts;
+/// Casts of a session read from its recorded HUD, in game time. The outcome is cached
+/// (including "interface not recognised"), so the video is analysed once; a failed
+/// analysis is not cached and is retried next time.
+///
+/// An analysis saved by an older version (no summoner spells, possibly another
+/// calibration) is redone when the video is still there. If its ultimates changed, the
+/// ultimate clip files cut from the old times are removed so they are cut again.
+fn hud_casts(store: &SessionStore, detector: &dyn UltimateDetector, session: &Session) -> Casts {
+    let cached = store.load_ultimates(&session.id).ok().flatten();
+    if let Some(record) = cached.as_ref().filter(|r| r.summoner_casts.is_some()) {
+        return record.to_casts();
     }
+    let fallback = cached
+        .as_ref()
+        .map(UltimateRecord::to_casts)
+        .unwrap_or_default();
     let Ok(recording) = store.recording_path(&session.id) else {
-        return Vec::new();
+        return fallback;
     };
     if !recording.is_file() {
-        return Vec::new();
+        return fallback;
     }
+    let to_game_time = |video: Vec<f64>| -> Vec<f64> {
+        video
+            .into_iter()
+            .map(|v| v + session.video_anchor_secs)
+            .collect()
+    };
     let record = match detector.analyse(&recording) {
         Ok(UltimateOutcome::Recognized {
             casts_video_secs,
+            summoner_casts_video_secs: [first, second],
             hud_scale,
         }) => UltimateRecord {
             recognized: true,
             hud_scale: Some(hud_scale),
-            casts: casts_video_secs
-                .into_iter()
-                .map(|v| v + session.video_anchor_secs)
-                .collect(),
+            casts: to_game_time(casts_video_secs),
+            summoner_casts: Some([to_game_time(first), to_game_time(second)]),
         },
         Ok(UltimateOutcome::Unrecognized) => UltimateRecord {
             recognized: false,
             hud_scale: None,
             casts: Vec::new(),
+            summoner_casts: Some([Vec::new(), Vec::new()]),
         },
-        Err(_) => return Vec::new(),
+        Err(_) => return fallback,
     };
+    if cached.is_some_and(|old| old.casts != record.casts) {
+        let _ = store.delete_clip_files(&session.id, "ultimate-");
+    }
     let _ = store.save_ultimates(&session.id, &record);
-    record.casts
+    record.to_casts()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -230,7 +254,7 @@ pub fn load_clips(store: &SessionStore, session_id: &str) -> Result<Vec<Clip>, C
     let session = store.load_session(session_id)?;
     let casts = store
         .load_ultimates(session_id)?
-        .map(|r| r.casts)
+        .map(|r| r.to_casts())
         .unwrap_or_default();
     let mut clips = build_clips_with(&session, ClipConfig::default(), &casts);
     for clip in &mut clips {
@@ -244,7 +268,7 @@ pub fn load_clips(store: &SessionStore, session_id: &str) -> Result<Vec<Clip>, C
 }
 
 /// Generates (or completes) the clips of a session without analysing the video for
-/// ultimates. Existing clip files are reused.
+/// ultimates. Clip files that are still current are reused.
 pub fn generate_clips(
     store: &SessionStore,
     cutter: &dyn ClipCutter,
@@ -254,8 +278,38 @@ pub fn generate_clips(
     generate_clips_with(store, cutter, &NoUltimates, session_id, progress)
 }
 
+/// Window tolerance (secs) under which a stored clip still matches the one to cut.
+const SAME_WINDOW_SECS: f64 = 0.5;
+
+/// Cuts `clip` again over its existing file. The new clip is cut aside and only then
+/// replaces the old one, so a failed cut loses nothing. The re-encoded copy of the old
+/// clip (if any) is gone, so it is eligible for compression again.
+fn replace_clip(
+    store: &SessionStore,
+    cutter: &dyn ClipCutter,
+    session_id: &str,
+    clip: &Clip,
+    recording: &Path,
+    out: &Path,
+) -> bool {
+    let aside = out.with_extension("new.mp4");
+    let cut = cutter.cut(recording, clip.start_secs, clip.end_secs, &aside);
+    if cut.is_ok() && std::fs::rename(&aside, out).is_ok() {
+        let _ = store.unmark_compressed(session_id, &clip.id);
+        return true;
+    }
+    let _ = std::fs::remove_file(&aside);
+    // the old file is still there and still plays
+    true
+}
+
 /// Generates (or completes) the clips of a session, including the local player's
-/// ultimates found by `detector`. Existing clip files are reused.
+/// ultimates and Flashs found by `detector`.
+///
+/// A clip file is reused only when its window is the one to cut now: after a change of
+/// the clip lengths, of the video anchor or of the HUD analysis the clip is cut again,
+/// from a temporary file so that the old clip survives a failed cut. Without the source
+/// video a clip that is out of date is kept as it is.
 /// `progress(done, total)` is called after each clip.
 pub fn generate_clips_with(
     store: &SessionStore,
@@ -267,7 +321,8 @@ pub fn generate_clips_with(
     let session = verified_session(store, detector, store.load_session(session_id)?);
     let recording = store.recording_path(session_id)?;
     let clips_dir = store.clips_dir(session_id)?;
-    let casts = ultimate_casts(store, detector, &session);
+    let casts = hud_casts(store, detector, &session);
+    let stored = store.load_clips(session_id).unwrap_or_default();
     let mut clips = build_clips_with(&session, ClipConfig::default(), &casts);
     let total = clips.len();
     std::fs::create_dir_all(&clips_dir).map_err(StoreError::from)?;
@@ -278,14 +333,27 @@ pub fn generate_clips_with(
     if need_recording && !recording.is_file() {
         return Err(ClipError::NoRecording);
     }
+    let can_cut = recording.is_file();
 
     let mut extracted = 0;
     for (i, clip) in clips.iter_mut().enumerate() {
         let out = clips_dir.join(format!("{}.mp4", clip.id));
-        let ready = out.is_file()
-            || cutter
+        let exists = out.is_file();
+        let current = exists
+            && stored.iter().any(|s| {
+                s.id == clip.id
+                    && (s.start_secs - clip.start_secs).abs() < SAME_WINDOW_SECS
+                    && (s.end_secs - clip.end_secs).abs() < SAME_WINDOW_SECS
+            });
+        let ready = if current || (exists && !can_cut) {
+            true
+        } else if exists {
+            replace_clip(store, cutter, &session.id, clip, &recording, &out)
+        } else {
+            cutter
                 .cut(&recording, clip.start_secs, clip.end_secs, &out)
-                .is_ok();
+                .is_ok()
+        };
         if ready {
             clip.file = Some(out.to_string_lossy().into_owned());
             extracted += 1;
@@ -335,8 +403,7 @@ mod tests {
             event_time: t,
             killer_name: Some("Me".into()),
             victim_name: Some("X".into()),
-            assisters: vec![],
-            dragon_type: None,
+            ..RawLiveEvent::default()
         }
     }
 
@@ -384,6 +451,84 @@ mod tests {
         let c2 = cutter(false);
         generate_clips(&store, &c2, "s", |_, _| {}).unwrap();
         assert!(c2.calls.borrow().is_empty());
+    }
+
+    /// Shifts the video anchor of the test session, which moves every clip window.
+    fn shift_windows(store: &SessionStore, secs: f64) {
+        let mut s = store.load_session("s").unwrap();
+        s.video_anchor_secs = secs;
+        store.save_session(&s).unwrap();
+    }
+
+    #[test]
+    fn a_clip_whose_window_changed_is_cut_again_over_its_file() {
+        let (_d, store) = setup(true);
+        let first = generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        let file = first[0].file.clone().unwrap();
+        std::fs::write(&file, b"old").unwrap();
+
+        shift_windows(&store, 3.0);
+        let c = cutter(false);
+        let second = generate_clips(&store, &c, "s", |_, _| {}).unwrap();
+
+        assert_eq!(c.calls.borrow().len(), 2, "both windows moved");
+        assert_eq!(
+            std::fs::read(&file).unwrap(),
+            b"mp4",
+            "the file was replaced"
+        );
+        assert!((second[0].start_secs - (first[0].start_secs - 3.0)).abs() < 1e-9);
+        assert_eq!(store.load_clips("s").unwrap(), second);
+        let leftovers = std::fs::read_dir(store.clips_dir("s").unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains(".new."))
+            .count();
+        assert_eq!(leftovers, 0, "no temporary file is left behind");
+
+        let c3 = cutter(false);
+        generate_clips(&store, &c3, "s", |_, _| {}).unwrap();
+        assert!(c3.calls.borrow().is_empty(), "now current again");
+    }
+
+    #[test]
+    fn a_failed_recut_keeps_the_old_clip() {
+        let (_d, store) = setup(true);
+        let first = generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        let file = first[0].file.clone().unwrap();
+        std::fs::write(&file, b"old").unwrap();
+
+        shift_windows(&store, 3.0);
+        let clips = generate_clips(&store, &cutter(true), "s", |_, _| {}).unwrap();
+
+        assert_eq!(std::fs::read(&file).unwrap(), b"old");
+        assert!(clips[0].file.is_some());
+        assert!(!Path::new(&file).with_extension("new.mp4").exists());
+    }
+
+    #[test]
+    fn a_recut_clip_can_be_compressed_again() {
+        let (_d, store) = setup(true);
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        store.mark_compressed("s", "kill-0").unwrap();
+        store.mark_compressed("s", "kill-1").unwrap();
+
+        shift_windows(&store, 3.0);
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        assert!(store.load_compressed("s").unwrap().is_empty());
+    }
+
+    #[test]
+    fn out_of_date_clips_are_kept_when_the_source_video_is_gone() {
+        let (_d, store) = setup(true);
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        store.delete_recording("s").unwrap();
+        shift_windows(&store, 3.0);
+
+        let c = cutter(false);
+        let clips = generate_clips(&store, &c, "s", |_, _| {}).unwrap();
+        assert!(c.calls.borrow().is_empty());
+        assert!(clips.iter().all(|c| c.file.is_some()));
     }
 
     #[test]
@@ -478,12 +623,21 @@ mod tests {
     }
 
     fn detector(video_secs: &[f64], fail: bool) -> FakeDetector {
+        detector_with_summoners(video_secs, [vec![], vec![]], fail)
+    }
+
+    fn detector_with_summoners(
+        video_secs: &[f64],
+        summoners: [Vec<f64>; 2],
+        fail: bool,
+    ) -> FakeDetector {
         FakeDetector {
             outcome: if fail {
                 Err("no ffmpeg".into())
             } else {
                 Ok(UltimateOutcome::Recognized {
                     casts_video_secs: video_secs.to_vec(),
+                    summoner_casts_video_secs: summoners,
                     hud_scale: 1.0,
                 })
             },
@@ -610,6 +764,175 @@ mod tests {
         assert!(matches!(err, ClipError::Store(StoreError::NotFound)));
     }
 
+    /// Gives the local player of the test session the two given summoner spells.
+    fn give_spells(store: &SessionStore, keys: [&str; 2]) {
+        let mut s = store.load_session("s").unwrap();
+        s.snapshots = vec![lgr_core::session::Snapshot {
+            game_time_secs: 0.0,
+            players: vec![lgr_core::session::PlayerSnapshot {
+                name: "Me#EUW".into(),
+                champion: "Ahri".into(),
+                team: "ORDER".into(),
+                is_me: true,
+                level: 1,
+                kills: 0,
+                deaths: 0,
+                assists: 0,
+                items: vec![],
+                spells: vec![],
+                spell_keys: keys.map(str::to_owned).to_vec(),
+            }],
+            my_gold: None,
+        }];
+        store.save_session(&s).unwrap();
+    }
+
+    fn flash_clips(clips: &[Clip]) -> Vec<&Clip> {
+        clips
+            .iter()
+            .filter(|c| c.theme == lgr_core::events::Theme::Flash)
+            .collect()
+    }
+
+    #[test]
+    fn flash_casts_become_flash_clips_in_game_time() {
+        let (_d, store) = setup(true);
+        give_spells(&store, ["SummonerDot", "SummonerFlash"]);
+        let mut s = store.load_session("s").unwrap();
+        s.video_anchor_secs = 10.0;
+        store.save_session(&s).unwrap();
+
+        let det = detector_with_summoners(&[], [vec![999.0], vec![60.0, 400.0]], false);
+        let clips = generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        let flash = flash_clips(&clips);
+        assert_eq!(flash.len(), 2, "the casts of the slot holding Flash only");
+        assert!(
+            (flash[0].game_time_secs - 70.0).abs() < 1e-9,
+            "video 60 s + anchor 10 s"
+        );
+        assert!(flash[0]
+            .file
+            .as_ref()
+            .is_some_and(|f| Path::new(f).is_file()));
+        let record = store.load_ultimates("s").unwrap().unwrap();
+        assert_eq!(
+            record.summoner_casts,
+            Some([vec![1009.0], vec![70.0, 410.0]])
+        );
+    }
+
+    #[test]
+    fn no_flash_clip_when_the_player_has_no_flash() {
+        let (_d, store) = setup(true);
+        give_spells(&store, ["SummonerHeal", "SummonerDot"]);
+        let det = detector_with_summoners(&[], [vec![60.0], vec![400.0]], false);
+        let clips = generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert!(flash_clips(&clips).is_empty());
+    }
+
+    #[test]
+    fn an_old_analysis_without_summoner_spells_is_redone_and_changed_ultimates_are_cut_again() {
+        let (_d, store) = setup(true);
+        give_spells(&store, ["SummonerFlash", "SummonerDot"]);
+        store
+            .save_ultimates(
+                "s",
+                &UltimateRecord {
+                    recognized: true,
+                    hud_scale: Some(1.1),
+                    casts: vec![150.0],
+                    summoner_casts: None,
+                },
+            )
+            .unwrap();
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        let stale = store.clips_dir("s").unwrap().join("ultimate-0.mp4");
+        std::fs::write(&stale, b"old").unwrap();
+
+        let det = detector_with_summoners(&[300.0], [vec![80.0], vec![]], false);
+        let c = cutter(false);
+        let clips = generate_clips_with(&store, &c, &det, "s", |_, _| {}).unwrap();
+
+        assert_eq!(det.calls.get(), 1);
+        let record = store.load_ultimates("s").unwrap().unwrap();
+        assert_eq!(record.casts, [300.0]);
+        assert!(record.summoner_casts.is_some());
+        assert_eq!(flash_clips(&clips).len(), 1);
+        assert_ne!(
+            std::fs::read(&stale).unwrap(),
+            b"old",
+            "the ultimate clip was cut again"
+        );
+    }
+
+    #[test]
+    fn an_old_analysis_with_the_same_ultimates_keeps_their_clip_files() {
+        let (_d, store) = setup(true);
+        store
+            .save_ultimates(
+                "s",
+                &UltimateRecord {
+                    recognized: true,
+                    hud_scale: Some(1.0),
+                    casts: vec![150.0],
+                    summoner_casts: None,
+                },
+            )
+            .unwrap();
+        generate_clips(&store, &cutter(false), "s", |_, _| {}).unwrap();
+        let kept = store.clips_dir("s").unwrap().join("ultimate-0.mp4");
+        std::fs::write(&kept, b"old").unwrap();
+
+        let det = detector(&[150.0], false);
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(&kept).unwrap(), b"old");
+    }
+
+    #[test]
+    fn an_old_unrecognised_result_is_analysed_again_with_the_current_calibration() {
+        let (_d, store) = setup(true);
+        store
+            .save_ultimates(
+                "s",
+                &UltimateRecord {
+                    recognized: false,
+                    hud_scale: None,
+                    casts: vec![],
+                    summoner_casts: None,
+                },
+            )
+            .unwrap();
+        let det = detector(&[120.0], false);
+        generate_clips_with(&store, &cutter(false), &det, "s", |_, _| {}).unwrap();
+        assert_eq!(det.calls.get(), 1);
+        assert_eq!(
+            ultimate_status(&store, "s").unwrap().state,
+            UltimateState::Ok
+        );
+    }
+
+    #[test]
+    fn an_old_analysis_is_kept_when_the_video_is_gone_or_the_analysis_fails() {
+        let (_d, store) = setup(false);
+        let old = UltimateRecord {
+            recognized: true,
+            hud_scale: Some(1.0),
+            casts: vec![150.0],
+            summoner_casts: None,
+        };
+        store.save_ultimates("s", &old).unwrap();
+        let det = detector(&[999.0], false);
+        let casts = hud_casts(&store, &det, &store.load_session("s").unwrap());
+        assert_eq!(casts.ultimate, [150.0]);
+        assert_eq!(det.calls.get(), 0, "no video to read");
+
+        std::fs::write(store.recording_path("s").unwrap(), b"mkv").unwrap();
+        let failing = detector(&[], true);
+        let casts = hud_casts(&store, &failing, &store.load_session("s").unwrap());
+        assert_eq!(casts.ultimate, [150.0]);
+        assert_eq!(store.load_ultimates("s").unwrap(), Some(old));
+    }
+
     struct LoadingDetector {
         end: Result<Option<f64>, String>,
         calls: std::cell::Cell<u32>,
@@ -644,6 +967,7 @@ mod tests {
                     recognized: true,
                     hud_scale: Some(1.0),
                     casts: vec![150.0],
+                    summoner_casts: None,
                 },
             )
             .unwrap();

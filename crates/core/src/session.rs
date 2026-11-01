@@ -2,6 +2,7 @@
 
 use crate::clips::{build_windows, ClipConfig};
 use crate::events::{classify, Highlight, RawLiveEvent, Theme};
+use crate::moments::key_moments;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,7 +99,10 @@ pub struct Involved {
 }
 
 /// Maps a name from a Live Client event (game name, no tag) to a player of the snapshot.
-fn resolve<'a>(players: &'a [PlayerSnapshot], event_name: &str) -> Option<&'a PlayerSnapshot> {
+pub(crate) fn resolve<'a>(
+    players: &'a [PlayerSnapshot],
+    event_name: &str,
+) -> Option<&'a PlayerSnapshot> {
     players.iter().find(|p| p.name == event_name).or_else(|| {
         players
             .iter()
@@ -177,6 +181,8 @@ fn theme_key(theme: Theme) -> &'static str {
         Theme::Objective => "objective",
         Theme::Turret => "turret",
         Theme::Ultimate => "ultimate",
+        Theme::Flash => "flash",
+        Theme::KeyMoment => "key_moment",
     }
 }
 
@@ -195,16 +201,65 @@ const ULTIMATE_CONFIG: ClipConfig = ClipConfig {
     post_roll_secs: 11.0,
 };
 
-/// Highlights for the local player's ultimates cast at the given game times.
-fn ultimate_highlights(session: &Session, cast_game_secs: &[f64]) -> Vec<Highlight> {
-    cast_game_secs
+/// A Flash is detected about a second after it is cast; what matters is the fight it
+/// serves, which follows it.
+const FLASH_CONFIG: ClipConfig = ClipConfig {
+    pre_roll_secs: 6.0,
+    post_roll_secs: 9.0,
+};
+
+/// A decisive moment is the end of a fight: show how it built up.
+const KEY_MOMENT_CONFIG: ClipConfig = ClipConfig {
+    pre_roll_secs: 20.0,
+    post_roll_secs: 8.0,
+};
+
+/// Casts of the local player read from the recorded HUD, in game time (seconds).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Casts {
+    pub ultimate: Vec<f64>,
+    /// Casts of summoner spell one (key D) and two (key F).
+    pub summoner: [Vec<f64>; 2],
+}
+
+impl Casts {
+    /// Only ultimates (for sessions analysed before summoner spells were read).
+    #[must_use]
+    pub fn ultimates(times: &[f64]) -> Self {
+        Self {
+            ultimate: times.to_vec(),
+            summoner: [Vec::new(), Vec::new()],
+        }
+    }
+}
+
+const FLASH_KEY: &str = "SummonerFlash";
+
+/// Which summoner spell slot (0 = first, 1 = second) holds the local player's Flash, or
+/// `None` when the player has none or the slots cannot be told apart.
+#[must_use]
+pub fn flash_slot(session: &Session) -> Option<usize> {
+    let me = session
+        .snapshots
+        .iter()
+        .rev()
+        .find_map(|s| s.players.iter().find(|p| p.is_me))?;
+    // Both keys must be known, or their position would not tell the slot.
+    if me.spell_keys.len() != 2 {
+        return None;
+    }
+    me.spell_keys.iter().position(|k| k == FLASH_KEY)
+}
+
+fn cast_highlights(session: &Session, times: &[f64], theme: Theme, label: &str) -> Vec<Highlight> {
+    times
         .iter()
         .enumerate()
         .map(|(i, &t)| Highlight {
             event_id: u32::try_from(i).unwrap_or(u32::MAX),
             time_secs: t,
-            theme: Theme::Ultimate,
-            label: "Ultimate".to_owned(),
+            theme,
+            label: label.to_owned(),
             killer: None,
             victim: None,
             assisters: Vec::new(),
@@ -213,23 +268,43 @@ fn ultimate_highlights(session: &Session, cast_game_secs: &[f64]) -> Vec<Highlig
         .collect()
 }
 
+/// Highlights that do not involve the local player: aces and gold swings.
+fn key_moment_highlights(session: &Session) -> Vec<Highlight> {
+    let roster = session
+        .snapshots
+        .last()
+        .map(|s| s.players.as_slice())
+        .unwrap_or_default();
+    key_moments(&session.events, roster)
+}
+
 /// Builds the clips of a session, grouped by theme; within a theme, highlights whose
 /// windows overlap (e.g. a multikill) share a single clip. File paths are left empty.
 #[must_use]
 pub fn build_clips(session: &Session, cfg: ClipConfig) -> Vec<Clip> {
-    build_clips_with(session, cfg, &[])
+    build_clips_with(session, cfg, &Casts::default())
 }
 
-/// Like [`build_clips`], also producing ultimate clips for casts detected at
-/// `ultimate_game_secs` (game time, seconds).
+/// Like [`build_clips`], also producing ultimate and Flash clips for the casts read
+/// from the recorded HUD.
 #[must_use]
-pub fn build_clips_with(
-    session: &Session,
-    cfg: ClipConfig,
-    ultimate_game_secs: &[f64],
-) -> Vec<Clip> {
+pub fn build_clips_with(session: &Session, cfg: ClipConfig, casts: &Casts) -> Vec<Clip> {
     let mut highlights = classify(&session.events, &session.player_aliases);
-    highlights.extend(ultimate_highlights(session, ultimate_game_secs));
+    highlights.extend(cast_highlights(
+        session,
+        &casts.ultimate,
+        Theme::Ultimate,
+        "Ultimate",
+    ));
+    if let Some(slot) = flash_slot(session) {
+        highlights.extend(cast_highlights(
+            session,
+            &casts.summoner[slot],
+            Theme::Flash,
+            "Flash",
+        ));
+    }
+    highlights.extend(key_moment_highlights(session));
     let themes = [
         Theme::Kill,
         Theme::Death,
@@ -237,6 +312,8 @@ pub fn build_clips_with(
         Theme::Objective,
         Theme::Turret,
         Theme::Ultimate,
+        Theme::Flash,
+        Theme::KeyMoment,
     ];
     let mut clips = Vec::new();
     for theme in themes {
@@ -246,10 +323,11 @@ pub fn build_clips_with(
             .cloned()
             .collect();
         of_theme.sort_by(|a, b| a.time_secs.total_cmp(&b.time_secs));
-        let theme_cfg = if theme == Theme::Ultimate {
-            ULTIMATE_CONFIG
-        } else {
-            cfg
+        let theme_cfg = match theme {
+            Theme::Ultimate => ULTIMATE_CONFIG,
+            Theme::Flash => FLASH_CONFIG,
+            Theme::KeyMoment => KEY_MOMENT_CONFIG,
+            _ => cfg,
         };
         for (i, w) in build_windows(&of_theme, theme_cfg).into_iter().enumerate() {
             // The recording may have started mid-game: nothing to show before it.
@@ -288,8 +366,7 @@ mod tests {
             event_time: t,
             killer_name: Some(killer.into()),
             victim_name: Some(victim.into()),
-            assisters: vec![],
-            dragon_type: None,
+            ..RawLiveEvent::default()
         }
     }
 
@@ -393,7 +470,11 @@ mod tests {
     #[test]
     fn ultimate_clips_are_built_from_cast_times_with_their_own_window() {
         let s = session(vec![], 0.0);
-        let clips = build_clips_with(&s, ClipConfig::default(), &[200.0, 205.0, 400.0]);
+        let clips = build_clips_with(
+            &s,
+            ClipConfig::default(),
+            &Casts::ultimates(&[200.0, 205.0, 400.0]),
+        );
         assert_eq!(clips.len(), 2);
         assert!(clips.iter().all(|c| c.theme == Theme::Ultimate));
         assert_eq!(clips[0].label, "Ultimate ×2");
@@ -412,7 +493,7 @@ mod tests {
     #[test]
     fn ultimates_cast_before_recording_started_are_dropped() {
         let s = session(vec![], 100.0);
-        let clips = build_clips_with(&s, ClipConfig::default(), &[50.0, 300.0]);
+        let clips = build_clips_with(&s, ClipConfig::default(), &Casts::ultimates(&[50.0, 300.0]));
         assert_eq!(clips.len(), 1);
         assert!((clips[0].game_time_secs - 300.0).abs() < 1e-9);
     }
@@ -420,9 +501,114 @@ mod tests {
     #[test]
     fn ultimate_clips_interleave_with_event_clips_by_time() {
         let s = session(vec![ev(1, "ChampionKill", 150.0, "Me", "Foe")], 0.0);
-        let clips = build_clips_with(&s, ClipConfig::default(), &[100.0, 300.0]);
+        let clips = build_clips_with(
+            &s,
+            ClipConfig::default(),
+            &Casts::ultimates(&[100.0, 300.0]),
+        );
         let themes: Vec<_> = clips.iter().map(|c| c.theme).collect();
         assert_eq!(themes, [Theme::Ultimate, Theme::Kill, Theme::Ultimate]);
+    }
+
+    /// A session whose local player has the given summoner spell keys.
+    fn session_with_spells(keys: &[&str], events: Vec<RawLiveEvent>) -> Session {
+        let mut s = session(events, 0.0);
+        for snap in &mut s.snapshots {
+            snap.players[0].spell_keys = keys.iter().map(|k| (*k).to_owned()).collect();
+        }
+        s
+    }
+
+    #[test]
+    fn the_flash_slot_is_the_position_of_flash_among_the_two_spells() {
+        assert_eq!(
+            flash_slot(&session_with_spells(
+                &["SummonerFlash", "SummonerDot"],
+                vec![]
+            )),
+            Some(0)
+        );
+        assert_eq!(
+            flash_slot(&session_with_spells(
+                &["SummonerDot", "SummonerFlash"],
+                vec![]
+            )),
+            Some(1)
+        );
+        assert_eq!(
+            flash_slot(&session_with_spells(
+                &["SummonerHeal", "SummonerDot"],
+                vec![]
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn the_flash_slot_is_unknown_when_a_spell_key_is_missing() {
+        assert_eq!(
+            flash_slot(&session_with_spells(&["SummonerFlash"], vec![])),
+            None
+        );
+        assert_eq!(flash_slot(&session_with_spells(&[], vec![])), None);
+        assert_eq!(flash_slot(&session(vec![], 0.0)), None);
+    }
+
+    #[test]
+    fn flash_clips_use_the_casts_of_the_slot_holding_flash() {
+        let s = session_with_spells(&["SummonerDot", "SummonerFlash"], vec![]);
+        let casts = Casts {
+            ultimate: vec![],
+            summoner: [vec![111.0], vec![222.0, 500.0]],
+        };
+        let clips = build_clips_with(&s, ClipConfig::default(), &casts);
+        assert_eq!(clips.len(), 2);
+        assert!(clips.iter().all(|c| c.theme == Theme::Flash));
+        assert_eq!(clips[0].id, "flash-0");
+        assert_eq!(clips[0].label, "Flash");
+        assert!((clips[0].start_secs - 216.0).abs() < 1e-9);
+        assert!((clips[0].end_secs - 231.0).abs() < 1e-9);
+        assert_eq!(
+            clips[0].involved,
+            [Involved {
+                name: "Me#EUW".into(),
+                roles: vec![Role::Caster]
+            }]
+        );
+    }
+
+    #[test]
+    fn no_flash_clip_without_flash_or_without_a_known_slot() {
+        let casts = Casts {
+            ultimate: vec![],
+            summoner: [vec![111.0], vec![222.0]],
+        };
+        for keys in [
+            &["SummonerHeal", "SummonerDot"][..],
+            &["SummonerFlash"][..],
+            &[][..],
+        ] {
+            let s = session_with_spells(keys, vec![]);
+            assert!(build_clips_with(&s, ClipConfig::default(), &casts).is_empty());
+        }
+    }
+
+    #[test]
+    fn key_moments_are_clips_even_when_the_local_player_is_not_involved() {
+        let events: Vec<_> = (0..5)
+            .map(|i| ev(i, "ChampionKill", 100.0 + f64::from(i) * 5.0, "Foe", "Ally"))
+            .collect();
+        let s = session(events, 0.0);
+        let clips = build_clips(&s, ClipConfig::default());
+        assert_eq!(clips.len(), 1);
+        assert_eq!(clips[0].theme, Theme::KeyMoment);
+        assert_eq!(clips[0].id, "key_moment-0");
+        assert_eq!(clips[0].label, "Écart d'or −1 500");
+        assert!(
+            (clips[0].start_secs - 100.0).abs() < 1e-9,
+            "20 s before the 5th kill"
+        );
+        assert!((clips[0].end_secs - 128.0).abs() < 1e-9);
     }
 
     #[test]

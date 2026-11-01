@@ -48,8 +48,25 @@ pub struct UltimateRecord {
     pub recognized: bool,
     /// Interface scale that was recognised.
     pub hud_scale: Option<f64>,
-    /// Game times (secs) of the casts; empty when the interface was not recognised.
+    /// Game times (secs) of the ultimate casts; empty when the interface was not
+    /// recognised.
     pub casts: Vec<f64>,
+    /// Game times (secs) of the casts of summoner spell one and two. `None` for analyses
+    /// saved before summoner spells were read: they are redone when the video is still
+    /// there.
+    #[serde(default)]
+    pub summoner_casts: Option<[Vec<f64>; 2]>,
+}
+
+impl UltimateRecord {
+    /// The casts, in the shape used to build clips.
+    #[must_use]
+    pub fn to_casts(&self) -> crate::session::Casts {
+        crate::session::Casts {
+            ultimate: self.casts.clone(),
+            summoner: self.summoner_casts.clone().unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +173,7 @@ impl SessionStore {
             recognized: true,
             hud_scale: None,
             casts: legacy,
+            summoner_casts: None,
         }))
     }
 
@@ -283,6 +301,23 @@ impl SessionStore {
         }
     }
 
+    /// Deletes the generated clip files whose name starts with `prefix` (e.g.
+    /// `ultimate-`), so that they are cut again.
+    pub fn delete_clip_files(&self, id: &str, prefix: &str) -> Result<(), StoreError> {
+        let dir = self.session_dir(id)?.join("clips");
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(prefix) {
+                fs::remove_file(entry.path())?;
+            }
+        }
+        Ok(())
+    }
+
     /// Ids of the clips whose file was already re-encoded.
     pub fn load_compressed(&self, id: &str) -> Result<Vec<String>, StoreError> {
         let path = self.session_dir(id)?.join("compressed.json");
@@ -300,6 +335,18 @@ impl SessionStore {
         }
         let dir = self.prepare(id)?;
         write_atomic(&dir.join("compressed.json"), &serde_json::to_vec(&done)?)?;
+        Ok(())
+    }
+
+    /// Forgets that a clip was re-encoded (its file has been replaced).
+    pub fn unmark_compressed(&self, id: &str, clip_id: &str) -> Result<(), StoreError> {
+        let mut done = self.load_compressed(id)?;
+        let before = done.len();
+        done.retain(|c| c != clip_id);
+        if done.len() != before {
+            let dir = self.prepare(id)?;
+            write_atomic(&dir.join("compressed.json"), &serde_json::to_vec(&done)?)?;
+        }
         Ok(())
     }
 
@@ -436,6 +483,7 @@ mod tests {
             recognized: true,
             hud_scale: Some(1.0),
             casts: vec![482.5, 603.0],
+            summoner_casts: Some([vec![120.5], vec![300.0, 640.0]]),
         };
         store.save_ultimates("a", &rec).unwrap();
         assert_eq!(store.load_ultimates("a").unwrap(), Some(rec));
@@ -443,9 +491,27 @@ mod tests {
             recognized: false,
             hud_scale: None,
             casts: vec![],
+            summoner_casts: None,
         };
         store.save_ultimates("a", &none).unwrap();
         assert_eq!(store.load_ultimates("a").unwrap(), Some(none));
+    }
+
+    #[test]
+    fn an_analysis_saved_before_summoner_spells_were_read_loads_without_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.prepare("a").unwrap();
+        fs::write(
+            store.session_dir("a").unwrap().join("ultimates.json"),
+            br#"{"recognized":true,"hudScale":1.0,"casts":[10.0]}"#,
+        )
+        .unwrap();
+        let rec = store.load_ultimates("a").unwrap().unwrap();
+        assert_eq!(rec.summoner_casts, None);
+        let casts = rec.to_casts();
+        assert_eq!(casts.ultimate, [10.0]);
+        assert!(casts.summoner.iter().all(Vec::is_empty));
     }
 
     #[test]

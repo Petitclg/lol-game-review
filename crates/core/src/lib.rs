@@ -1,6 +1,7 @@
 pub mod clips;
 pub mod events;
 pub mod loading;
+pub mod moments;
 pub mod session;
 pub mod settings;
 pub mod store;

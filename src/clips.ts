@@ -2,7 +2,16 @@ import type { Clip, Theme } from "./types";
 
 export type ThemeFilter = Theme | "all";
 
-export const THEMES: readonly Theme[] = ["kill", "death", "assist", "ultimate", "objective", "turret"];
+export const THEMES: readonly Theme[] = [
+  "kill",
+  "death",
+  "assist",
+  "ultimate",
+  "flash",
+  "key_moment",
+  "objective",
+  "turret",
+];
 
 export const THEME_TABS: ReadonlyArray<{ id: ThemeFilter; label: string }> = [
   { id: "all", label: "Tous" },
@@ -10,6 +19,8 @@ export const THEME_TABS: ReadonlyArray<{ id: ThemeFilter; label: string }> = [
   { id: "death", label: "Morts" },
   { id: "assist", label: "Assists" },
   { id: "ultimate", label: "Ultimates" },
+  { id: "flash", label: "Flashs" },
+  { id: "key_moment", label: "Moments clés" },
   { id: "objective", label: "Objectifs" },
   { id: "turret", label: "Tours" },
 ];
@@ -35,6 +46,8 @@ export function countByTheme(clips: readonly Clip[]): Record<ThemeFilter, number
     death: 0,
     assist: 0,
     ultimate: 0,
+    flash: 0,
+    key_moment: 0,
     objective: 0,
     turret: 0,
   };
@@ -48,6 +61,8 @@ export function groupByTheme(clips: readonly Clip[]): Record<Theme, Clip[]> {
     death: [],
     assist: [],
     ultimate: [],
+    flash: [],
+    key_moment: [],
     objective: [],
     turret: [],
   };

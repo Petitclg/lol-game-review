@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Raw event as returned by `GET /liveclientdata/eventdata` (subset of fields).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct RawLiveEvent {
     #[serde(rename = "EventID")]
@@ -18,6 +18,18 @@ pub struct RawLiveEvent {
     pub assisters: Vec<String>,
     #[serde(default)]
     pub dragon_type: Option<String>,
+    /// Player who scored the ace (`Ace` events).
+    #[serde(default)]
+    pub acer: Option<String>,
+    /// Team that scored the ace, `ORDER` or `CHAOS` (`Ace` events).
+    #[serde(default)]
+    pub acing_team: Option<String>,
+    /// Internal name of the destroyed turret, e.g. `Turret_T2_L_03_A` (`TurretKilled`).
+    #[serde(default)]
+    pub turret_killed: Option<String>,
+    /// Internal name of the destroyed inhibitor, e.g. `Barracks_T1_C1` (`InhibKilled`).
+    #[serde(default)]
+    pub inhib_killed: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,6 +59,11 @@ pub enum Theme {
     Turret,
     /// The local player's own ultimates, detected from the recorded HUD.
     Ultimate,
+    /// The local player's own Flash, detected from the recorded HUD.
+    Flash,
+    /// A decisive moment of the game, whoever takes part in it: an ace, or a large
+    /// estimated swing of team gold.
+    KeyMoment,
 }
 
 /// A highlight in which the tracked player is involved.
@@ -63,7 +80,7 @@ pub struct Highlight {
     pub victim: Option<String>,
     #[serde(default)]
     pub assisters: Vec<String>,
-    /// Player casting the ability (ultimate highlights only).
+    /// Player casting the ability (ultimate and Flash highlights only).
     #[serde(default)]
     pub caster: Option<String>,
 }
@@ -73,7 +90,8 @@ pub struct Highlight {
 /// `aliases` are all the names under which the Live Client API may refer to the
 /// player (Riot ID, game name, summoner name).
 /// Objectives and turrets count only when the player got the last hit or an assist.
-/// Ultimates are not exposed by the Live Client API and are out of scope here.
+/// Ultimates and Flash are not exposed by the Live Client API and are out of scope here;
+/// decisive moments come from [`crate::moments`].
 #[must_use]
 pub fn classify<S: AsRef<str>>(events: &[RawLiveEvent], aliases: &[S]) -> Vec<Highlight> {
     let mut out: Vec<Highlight> = events

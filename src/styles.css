@@ -13,6 +13,8 @@
   --warn: #f2b134;
   --danger: #d9435a;
   --ultimate: #ff7a2f;
+  --flash: #2fd0d9;
+  --key-moment: #ff5fa2;
   --radius: 8px;
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
@@ -588,6 +590,24 @@ input[type="checkbox"]:focus-visible {
   color: #1a0d00;
 }
 
+.tab[data-theme="flash"] {
+  border-color: var(--flash);
+}
+
+.tab[data-theme="flash"].active {
+  background: var(--flash);
+  color: #00191b;
+}
+
+.tab[data-theme="key_moment"] {
+  border-color: var(--key-moment);
+}
+
+.tab[data-theme="key_moment"].active {
+  background: var(--key-moment);
+  color: #200010;
+}
+
 .tab-count {
   font-size: 0.72rem;
   padding: 0 0.4rem;
@@ -697,6 +717,12 @@ input[type="checkbox"]:focus-visible {
 }
 .clip-item.theme-ultimate {
   border-left-color: var(--ultimate);
+}
+.clip-item.theme-flash {
+  border-left-color: var(--flash);
+}
+.clip-item.theme-key_moment {
+  border-left-color: var(--key-moment);
 }
 
 .clip-item.selected {
