@@ -1,0 +1,42 @@
+name: Announce release
+
+# Posts the release notes of a tag to Discord. Called by the Release workflow once the
+# installer is published; can also be run by hand to repost an announcement.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, e.g. v0.2.0
+        required: true
+        type: string
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to announce, e.g. v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  discord:
+    name: Discord
+    runs-on: ubuntu-latest
+    steps:
+      # The tag's own tree holds docs/release-notes/<tag>.md; full history for the commit range.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Post the release notes
+        env:
+          TAG: ${{ inputs.tag }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node scripts/announce-release.mjs "$TAG"

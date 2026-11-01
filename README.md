@@ -68,6 +68,15 @@ Pousser un tag `vX.Y.Z` égal à la version de `src-tauri/tauri.conf.json` décl
 
 L'application vérifie la dernière release au démarrage, réessaie en cas d'échec (30 s, 2 min, 10 min) puis re-vérifie toutes les 6 h. Elle n'installe jamais une mise à jour pendant une partie. Le journal est dans `%LOCALAPPDATA%\com.petitclg.lolgamereview\logs\updater.log`.
 
+### Annonce sur Discord
+
+Une fois la release publiée, le workflow poste les nouveautés dans un salon Discord ([ADR 0006](docs/adr/0006-discord-release-announcement.md)).
+
+1. Discord : *Paramètres du salon → Intégrations → Webhooks → Nouveau webhook*, puis copier l'URL.
+2. Dépôt : `gh secret set DISCORD_WEBHOOK_URL` (coller l'URL ; ne jamais la commiter).
+3. Les nouveautés viennent des commits `feat` / `fix` / `perf` depuis la version précédente. Pour un texte rédigé à la main, créer `docs/release-notes/vX.Y.Z.md` avant de poser le tag.
+4. Essai à blanc : `node scripts/announce-release.mjs vX.Y.Z --dry-run`. Republier : *Actions → Announce release → Run workflow*.
+
 ## Conventions
 
 - Commits : [Conventional Commits](https://www.conventionalcommits.org/).

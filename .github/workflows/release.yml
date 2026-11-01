@@ -50,3 +50,10 @@ jobs:
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
+
+  announce:
+    needs: release
+    uses: ./.github/workflows/announce.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
