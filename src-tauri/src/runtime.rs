@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
 
 struct FfmpegRecorder {
@@ -98,11 +98,19 @@ const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
 /// How often the game state is looked at to notice that a game just ended (a lock read,
 /// no disk access).
 const GAME_END_WATCH_INTERVAL: Duration = Duration::from_secs(1);
+/// While idle, how often the stored games are looked at for clips still to generate (only
+/// file names are read).
+const PENDING_RECHECK_INTERVAL: Duration = Duration::from_secs(30);
+/// Wait after the launch before the first look, so that starting the application does not
+/// compete with whatever the player is starting.
+const STARTUP_DELAY: Duration = Duration::from_secs(15);
 
-/// Generates the clips of each game as soon as it ends, when the option is on. It never
-/// runs while a game is in progress: if the next game starts first, the generation waits
-/// for that one to end. The work itself runs at reduced priority like a manual
-/// generation, and the window is told when it is done.
+/// Generates the clips of the games that have none yet, when the option is on: the game
+/// that just ended, and the games recorded earlier (the application was closed or being
+/// updated when they ended), the most recent first, one at a time. It never starts while a
+/// game is in progress: if the next game starts first, the generation waits for that one
+/// to end. The work itself runs at reduced priority like a manual generation, and the
+/// window is told when each game is done.
 pub fn spawn_auto_generation(app: AppHandle, state: &AppState) {
     let store = state.store.clone();
     let settings = state.settings.clone();
@@ -117,21 +125,20 @@ pub fn spawn_auto_generation(app: AppHandle, state: &AppState) {
                 .lock()
                 .map_or(true, |s| s.state == lgr_engine::GameState::InGame)
         };
-        let mut auto = AutoGenerator::new(&store);
+        let mut auto = AutoGenerator::new();
         let mut was_in_game = false;
-        let mut pending = false;
+        let mut check_at = Instant::now() + STARTUP_DELAY;
         while sleep_unless_stopped(&stop, GAME_END_WATCH_INTERVAL) {
             let now_in_game = in_game();
-            pending |= was_in_game && !now_in_game;
+            if was_in_game && !now_in_game {
+                check_at = Instant::now(); // the game that just ended
+            }
             was_in_game = now_in_game;
-            if !pending || now_in_game {
+            if now_in_game || Instant::now() < check_at {
                 continue;
             }
-            pending = false;
+            check_at = Instant::now() + PENDING_RECHECK_INTERVAL;
             if !settings.load().auto_generate_clips {
-                // games that end while the option is off are not generated when it is
-                // turned on again
-                while auto.next(&store).is_some() {}
                 continue;
             }
             if let Some(id) = auto.next(&store) {
@@ -139,7 +146,7 @@ pub fn spawn_auto_generation(app: AppHandle, state: &AppState) {
                     generation::generate(&app, &store, &settings, ffmpeg.clone(), &in_flight, &id);
                 generation::announce(&app, &id, &outcome);
                 // another game may be waiting
-                pending = true;
+                check_at = Instant::now();
             }
         }
     });

@@ -1,50 +1,36 @@
-//! Generating the clips of each game as soon as it ends.
+//! Generating the clips of each game without the player asking.
 //!
 //! The decision of *which* game to generate lives here, away from the threads and the
-//! window, so that it can be tested: [`AutoGenerator`] picks the games that end while
-//! the application runs, and [`InFlight`] makes sure a game is never generated twice at
-//! the same time (by hand and automatically, for instance).
+//! window, so that it can be tested: [`AutoGenerator`] picks the games whose clips are still
+//! to be generated, and [`InFlight`] makes sure a game is never generated twice at the same
+//! time (by hand and automatically, for instance).
 
 use lgr_core::store::SessionStore;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-/// Picks, one at a time, the games that ended since it was created.
+/// Picks, one at a time, the games whose clips are still to be generated.
 #[derive(Debug, Default)]
 pub struct AutoGenerator {
-    seen: HashSet<String>,
+    attempted: HashSet<String>,
 }
 
 impl AutoGenerator {
-    /// Games already stored are left alone: only the games that end from now on are
-    /// generated, so that starting the application never triggers a long backlog.
     #[must_use]
-    pub fn new(store: &SessionStore) -> Self {
-        let seen = store
-            .list()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|m| m.id)
-            .collect();
-        Self { seen }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// The oldest game that ended since the last call, if its video exists and its clips
-    /// are not generated yet. A game is looked at once: a failed generation is not retried
-    /// in a loop (the user can still generate by hand, and a game is not retried at the
-    /// next launch either, since it is then a stored game).
+    /// The most recent game that is over, whose video exists and whose clips are not
+    /// generated yet: the game that just ended, or one that ended while the application was
+    /// closed or restarting. A game is picked once per run: a failed generation is not
+    /// retried in a loop (the player can still generate by hand, and it is tried again at
+    /// the next launch).
     pub fn next(&mut self, store: &SessionStore) -> Option<String> {
-        let mut sessions = store.list().ok()?;
-        sessions.reverse(); // `list` is most recent first
-        for meta in sessions {
-            if !self.seen.insert(meta.id.clone()) {
-                continue;
-            }
-            if meta.has_recording && !meta.clips_ready {
-                return Some(meta.id);
-            }
-        }
-        None
+        store
+            .pending_generation()
+            .into_iter()
+            .find(|id| self.attempted.insert(id.clone()))
     }
 }
 
@@ -144,47 +130,56 @@ mod tests {
     }
 
     #[test]
-    fn games_already_stored_when_the_application_starts_are_left_alone() {
+    fn a_game_recorded_before_the_application_started_is_picked() {
+        // e.g. the game ended while the application was closed or restarting
         let (_d, store) = store();
         add(&store, "g1", 1, true, false);
-        let mut auto = AutoGenerator::new(&store);
-        assert_eq!(auto.next(&store), None);
+        let mut auto = AutoGenerator::new();
+        assert_eq!(auto.next(&store).as_deref(), Some("g1"));
     }
 
     #[test]
-    fn a_game_that_ends_is_picked_once() {
+    fn a_game_is_picked_once_even_if_its_generation_failed() {
         let (_d, store) = store();
         add(&store, "g1", 1, true, false);
-        let mut auto = AutoGenerator::new(&store);
-        add(&store, "g2", 2, true, false);
-        assert_eq!(auto.next(&store).as_deref(), Some("g2"));
+        let mut auto = AutoGenerator::new();
+        assert_eq!(auto.next(&store).as_deref(), Some("g1"));
+        assert_eq!(auto.next(&store), None, "not picked again in the same run");
         assert_eq!(
-            auto.next(&store),
-            None,
-            "not picked again, even if it failed"
+            AutoGenerator::new().next(&store).as_deref(),
+            Some("g1"),
+            "but tried again at the next launch"
         );
     }
 
     #[test]
-    fn games_are_picked_oldest_first_one_per_call() {
+    fn the_most_recent_game_comes_first_one_per_call() {
         let (_d, store) = store();
-        let mut auto = AutoGenerator::new(&store);
-        add(&store, "g3", 30, true, false);
-        add(&store, "g2", 20, true, false);
-        assert_eq!(auto.next(&store).as_deref(), Some("g2"));
-        assert_eq!(auto.next(&store).as_deref(), Some("g3"));
+        add(&store, "g20", 20, true, false);
+        add(&store, "g30", 30, true, false);
+        add(&store, "g10", 10, true, false);
+        let mut auto = AutoGenerator::new();
+        assert_eq!(auto.next(&store).as_deref(), Some("g30"));
+        assert_eq!(auto.next(&store).as_deref(), Some("g20"));
+        assert_eq!(auto.next(&store).as_deref(), Some("g10"));
         assert_eq!(auto.next(&store), None);
     }
 
     #[test]
-    fn a_game_without_video_or_with_clips_is_skipped_for_good() {
+    fn a_game_that_ends_later_is_picked_too() {
         let (_d, store) = store();
-        let mut auto = AutoGenerator::new(&store);
-        add(&store, "nov", 1, false, false);
-        add(&store, "done", 2, true, true);
+        let mut auto = AutoGenerator::new();
         assert_eq!(auto.next(&store), None);
-        // the video appearing later does not make it a new game
-        std::fs::write(store.recording_path("nov").unwrap(), b"mkv").unwrap();
+        add(&store, "g5", 5, true, false);
+        assert_eq!(auto.next(&store).as_deref(), Some("g5"));
+    }
+
+    #[test]
+    fn a_game_without_video_or_with_clips_is_never_picked() {
+        let (_d, store) = store();
+        let mut auto = AutoGenerator::new();
+        add(&store, "g1", 1, false, false);
+        add(&store, "g2", 2, true, true);
         assert_eq!(auto.next(&store), None);
     }
 
@@ -192,8 +187,7 @@ mod tests {
     fn an_empty_or_unreadable_store_gives_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let store = SessionStore::new(dir.path().join("missing"));
-        let mut auto = AutoGenerator::new(&store);
-        assert_eq!(auto.next(&store), None);
+        assert_eq!(AutoGenerator::new().next(&store), None);
     }
 
     #[test]

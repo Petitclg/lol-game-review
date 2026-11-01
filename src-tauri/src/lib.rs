@@ -82,10 +82,11 @@ pub fn run() {
                 ffmpeg,
             );
             runtime::spawn_maintenance(&state);
+            // also in the sandbox: it works on a copy of the data, and records nothing
+            runtime::spawn_auto_generation(app.handle().clone(), &state);
             if sandbox.is_none() {
                 let handle = runtime::spawn_monitor(app.handle().clone(), &state);
                 *state.monitor_thread.lock().map_err(|e| e.to_string())? = handle;
-                runtime::spawn_auto_generation(app.handle().clone(), &state);
             } else {
                 // The configured asset scope only covers the real data folder.
                 let sessions = data_dir.join("sessions");

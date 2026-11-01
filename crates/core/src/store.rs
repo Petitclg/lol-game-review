@@ -382,6 +382,34 @@ impl SessionStore {
         }
     }
 
+    /// Games whose clips are still to be generated: their timeline is saved (the game is
+    /// over), their video exists and no clips were generated. Most recent first. Only file
+    /// names are looked at, so this is cheap enough to ask often.
+    #[must_use]
+    pub fn pending_generation(&self) -> Vec<String> {
+        let Ok(entries) = fs::read_dir(&self.root) else {
+            return Vec::new();
+        };
+        let mut pending: Vec<(u64, String)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let id = entry.file_name().to_str()?.to_owned();
+                let dir = entry.path();
+                let waiting = dir.join("session.json").is_file()
+                    && dir.join("recording.mkv").is_file()
+                    && !dir.join("clips.json").is_file();
+                // ids are `g<start in ms>`: the number orders games by date
+                let started = id
+                    .strip_prefix('g')
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0);
+                waiting.then_some((started, id))
+            })
+            .collect();
+        pending.sort_by(|a, b| b.cmp(a));
+        pending.into_iter().map(|(_, id)| id).collect()
+    }
+
     /// Lists stored sessions, most recent first. Unreadable sessions are skipped.
     pub fn list(&self) -> Result<Vec<SessionMeta>, StoreError> {
         let mut out = Vec::new();
@@ -863,6 +891,46 @@ mod tests {
         let text = tags[0].strip_prefix("custom:").unwrap();
         assert!(text.chars().count() <= 40 && text.ends_with('…'), "{text}");
         assert!(note.starts_with(text.trim_end_matches('…')));
+    }
+
+    #[test]
+    fn games_to_generate_have_a_timeline_a_video_and_no_clips_most_recent_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        assert!(SessionStore::new(dir.path().join("none"))
+            .pending_generation()
+            .is_empty());
+        for (id, started) in [("g100", 100), ("g300", 300), ("g200", 200)] {
+            store.save_session(&session(id, started)).unwrap();
+            fs::write(store.recording_path(id).unwrap(), b"mkv").unwrap();
+        }
+        assert_eq!(store.pending_generation(), ["g300", "g200", "g100"]);
+
+        store.save_clips("g300", &[]).unwrap(); // clips generated
+        fs::remove_file(store.recording_path("g100").unwrap()).unwrap(); // video gone
+        assert_eq!(store.pending_generation(), ["g200"]);
+    }
+
+    #[test]
+    fn a_game_in_progress_or_without_timeline_is_not_pending() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        store.prepare("g500").unwrap(); // being recorded: no timeline yet
+        fs::write(store.recording_path("g500").unwrap(), b"mkv").unwrap();
+        assert!(store.pending_generation().is_empty());
+        store.save_session(&session("g500", 500)).unwrap();
+        assert_eq!(store.pending_generation(), ["g500"]);
+    }
+
+    #[test]
+    fn games_are_ordered_by_the_date_in_their_id_not_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        for id in ["g9", "g10", "odd"] {
+            store.save_session(&session(id, 1)).unwrap();
+            fs::write(store.recording_path(id).unwrap(), b"mkv").unwrap();
+        }
+        assert_eq!(store.pending_generation(), ["g10", "g9", "odd"]);
     }
 
     #[test]

@@ -38,7 +38,7 @@ Le test `crates/media/tests/window_capture.rs` dépend du GPU et peut échouer q
 
 ## Tester sans toucher à l'installation réelle
 
-Utiliser le **bac à sable** : `LGR_SANDBOX=1` (ou un dossier) lance une instance isolée (données et WebView séparés, aucun enregistrement, aucune mise à jour) qui peut tourner à côté de l'application installée. Pour une vérification de bout en bout, y copier la session d'un vrai enregistrement (`session.json` + `recording.mkv`), jamais la manipuler en place. Piloter l'interface avec `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` et un script CDP (le créer **avant** de l'exécuter). Ne pas tuer l'application installée pendant qu'elle enregistre (ffmpeg orphelin) ; arrêter un processus avec son PID littéral.
+Utiliser le **bac à sable** : `LGR_SANDBOX=1` (ou un dossier) lance une instance isolée (données et WebView séparés, aucun enregistrement, aucune mise à jour) qui peut tourner à côté de l'application installée. Pour une vérification de bout en bout, y copier la session d'un vrai enregistrement (`session.json` + `recording.mkv`), jamais la manipuler en place. La génération automatique y tourne aussi : une copie sans `clips.json` est générée seule 15 s après le lancement (et sa vidéo copiée supprimée, selon les réglages). Piloter l'interface avec `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` et un script CDP (le créer **avant** de l'exécuter). Ne pas tuer l'application installée pendant qu'elle enregistre (ffmpeg orphelin) ; arrêter un processus avec son PID littéral.
 
 Données utilisateur : `%LOCALAPPDATA%\com.petitclg.lolgamereview` (`sessions/<id>/…`, `settings.json`, `logs/`). L'application installée est dans `%LOCALAPPDATA%\LoL Game Review`.
 

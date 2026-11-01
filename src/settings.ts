@@ -11,7 +11,7 @@ export const MAKE_ROOM_HELP =
   "Au début d'une partie, si le disque ou le plafond n'a plus la place d'environ 4 Go, les vidéos puis les clips des parties les plus anciennes sont supprimés pour que la partie soit enregistrée. La dernière partie enregistrée n'est jamais supprimée.";
 
 export const AUTO_GENERATE_HELP =
-  "Les clips d'une partie sont générés dès qu'elle se termine, jamais pendant une autre partie (la génération attend sa fin). Les parties déjà enregistrées ne sont pas concernées : utilisez « Générer les clips ».";
+  "Les clips d'une partie sont générés dès qu'elle se termine, jamais pendant une autre partie (la génération attend sa fin). Les parties déjà enregistrées dont les clips n'existent pas encore sont aussi traitées, la plus récente d'abord, une à la fois, quand aucune partie n'est en cours. Avec « Supprimer la vidéo source », la vidéo d'une partie est supprimée une fois ses clips générés.";
 
 export const ULTIMATE_WARNING =
   "Ultimates : interface du jeu non reconnue dans la vidéo (échelle ou disposition inhabituelle). Aucun ultimate n'a été généré pour cette partie.";
