@@ -1,5 +1,6 @@
 //! Application services shared by the desktop shell.
 
+pub mod autogen;
 pub mod clipgen;
 pub mod disk;
 pub mod games;
@@ -9,6 +10,7 @@ pub mod sandbox;
 pub mod schedule;
 pub mod storage;
 
+pub use autogen::{AutoGenerator, InFlight, InFlightToken};
 pub use clipgen::{
     generate_clips, generate_clips_with, load_clips, ultimate_status, ClipCutter, ClipError,
     FfmpegCutter, HudUltimateDetector, UltimateDetector, UltimateOutcome, UltimateState,

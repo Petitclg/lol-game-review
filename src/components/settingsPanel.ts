@@ -3,6 +3,7 @@ import { el } from "../dom";
 import {
   DEFAULT_RETENTION_GB,
   MAKE_ROOM_HELP,
+  AUTO_GENERATE_HELP,
   MIN_RETENTION_GB,
   RETENTION_HELP,
   formToSettings,
@@ -64,6 +65,9 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
   const makeRoom = el("input", {
     attrs: { type: "checkbox", id: "set-make-room", "aria-describedby": "set-make-room-help" },
   });
+  const autoGenerate = el("input", {
+    attrs: { type: "checkbox", id: "set-auto-generate", "aria-describedby": "set-auto-generate-help" },
+  });
   const limit = el("input", { attrs: { type: "checkbox", id: "set-limit" } });
   const retention = el("input", {
     class: "retention-input",
@@ -87,6 +91,8 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
 
   const form = el("form", { class: "settings-form", attrs: { novalidate: true } }, [
     el("h3", { text: "Réglages" }),
+    el("label", { class: "check" }, [autoGenerate, "Générer les clips à la fin de chaque partie"]),
+    el("p", { class: "muted small", text: AUTO_GENERATE_HELP, attrs: { id: "set-auto-generate-help" } }),
     el("label", { class: "check" }, [deleteSource, "Supprimer la vidéo source après la génération des clips"]),
     el("label", { class: "check" }, [compress, "Compresser les clips (gain de place, effectué hors partie)"]),
     el("label", { class: "check" }, [
@@ -144,6 +150,7 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
     deleteSource.checked = f.deleteSourceAfterClips;
     compress.checked = f.compressClips;
     makeRoom.checked = f.makeRoomForRecording;
+    autoGenerate.checked = f.autoGenerateClips;
     limit.checked = f.limit;
     retention.value = f.retentionText;
     syncLimit();
@@ -183,6 +190,7 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
       deleteSourceAfterClips: deleteSource.checked,
       compressClips: compress.checked,
       makeRoomForRecording: makeRoom.checked,
+      autoGenerateClips: autoGenerate.checked,
       limit: limit.checked,
       retentionText: retention.value,
     });

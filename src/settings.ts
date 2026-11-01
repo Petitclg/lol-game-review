@@ -10,6 +10,9 @@ export const RETENTION_HELP =
 export const MAKE_ROOM_HELP =
   "Au début d'une partie, si le disque ou le plafond n'a plus la place d'environ 4 Go, les vidéos puis les clips des parties les plus anciennes sont supprimés pour que la partie soit enregistrée. La dernière partie enregistrée n'est jamais supprimée.";
 
+export const AUTO_GENERATE_HELP =
+  "Les clips d'une partie sont générés dès qu'elle se termine, jamais pendant une autre partie (la génération attend sa fin). Les parties déjà enregistrées ne sont pas concernées : utilisez « Générer les clips ».";
+
 export const ULTIMATE_WARNING =
   "Ultimates : interface du jeu non reconnue dans la vidéo (échelle ou disposition inhabituelle). Aucun ultimate n'a été généré pour cette partie.";
 
@@ -20,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   compressClips: true,
   retentionGb: DEFAULT_RETENTION_GB,
   makeRoomForRecording: true,
+  autoGenerateClips: true,
 };
 
 const KIB = 1024;
@@ -60,6 +64,7 @@ export function normalizeSettings(raw: unknown): Settings {
     compressClips: bool(r["compressClips"], DEFAULT_SETTINGS.compressClips),
     retentionGb,
     makeRoomForRecording: bool(r["makeRoomForRecording"], DEFAULT_SETTINGS.makeRoomForRecording),
+    autoGenerateClips: bool(r["autoGenerateClips"], DEFAULT_SETTINGS.autoGenerateClips),
   };
 }
 
@@ -82,6 +87,7 @@ export interface SettingsForm {
   deleteSourceAfterClips: boolean;
   compressClips: boolean;
   makeRoomForRecording: boolean;
+  autoGenerateClips: boolean;
   limit: boolean;
   retentionText: string;
 }
@@ -91,6 +97,7 @@ export function settingsToForm(s: Settings): SettingsForm {
     deleteSourceAfterClips: s.deleteSourceAfterClips,
     compressClips: s.compressClips,
     makeRoomForRecording: s.makeRoomForRecording,
+    autoGenerateClips: s.autoGenerateClips,
     limit: s.retentionGb !== null,
     retentionText: String(s.retentionGb ?? DEFAULT_RETENTION_GB),
   };
@@ -111,6 +118,7 @@ export function formToSettings(form: SettingsForm): Parsed<Settings> {
       compressClips: form.compressClips,
       retentionGb,
       makeRoomForRecording: form.makeRoomForRecording,
+      autoGenerateClips: form.autoGenerateClips,
     },
   };
 }

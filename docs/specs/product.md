@@ -17,6 +17,7 @@ Permettre au joueur de revoir, par thématique, les clips des moments où il int
 | F7 | Mise à jour automatique vers la dernière release au démarrage. |
 | F8 | Les clips dont les fenêtres se recoupent (un kill, une mort et un ultimate rapprochés) sont fusionnés en un seul clip, visible dans chacun de ses thèmes ([ADR 0008](../adr/0008-clip-merging-and-annotations.md)). |
 | F9 | Chaque moment d'un clip peut être annoté : étiquettes (erreurs de mort, bons réflexes, teamfight) et note libre ; les annotations survivent à la régénération des clips. |
+| F10 | Les clips d'une partie sont générés automatiquement à sa fin (option activée par défaut), sans jamais tourner pendant une autre partie ([ADR 0009](../adr/0009-automatic-clip-generation.md)). |
 
 ## Exigences non fonctionnelles
 

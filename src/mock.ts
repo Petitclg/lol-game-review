@@ -479,6 +479,10 @@ export function createMockBackend(): Backend {
       progressListeners.add(cb);
       return () => progressListeners.delete(cb);
     },
+    // le mode simulé ne joue aucune partie : pas de génération automatique
+    async onClipsGenerated(): Promise<Unlisten> {
+      return () => undefined;
+    },
     videoSrc: () => null,
   };
 }

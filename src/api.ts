@@ -7,6 +7,7 @@ import type {
   Annotation,
   Annotations,
   Clip,
+  ClipsGenerated,
   ClipsProgress,
   GameEntry,
   Settings,
@@ -35,6 +36,8 @@ export interface Backend {
   getUltimateStatus(sessionId: string): Promise<UltimateStatus>;
   onStatusChanged(cb: (status: Status) => void): Promise<Unlisten>;
   onClipsProgress(cb: (progress: ClipsProgress) => void): Promise<Unlisten>;
+  /** Fin d'une génération automatique (à la fin d'une partie) : réussie (`error` null) ou non. */
+  onClipsGenerated(cb: (done: ClipsGenerated) => void): Promise<Unlisten>;
   /** Version de l'application ; absente ou vide : rien n'est affiché. */
   getVersion(): Promise<string>;
   /** URL lisible par <video>, ou null si le fichier n'est pas lisible (mode simulé). */
@@ -75,6 +78,7 @@ function createTauriBackend(): Backend {
     getVersion: () => getVersion(),
     onStatusChanged: (cb) => listen<Status>("status-changed", (e) => cb(e.payload)),
     onClipsProgress: (cb) => listen<ClipsProgress>("clips-progress", (e) => cb(e.payload)),
+    onClipsGenerated: (cb) => listen<ClipsGenerated>("clips-generated", (e) => cb(e.payload)),
     videoSrc: (path) => convertFileSrc(path),
   };
 }

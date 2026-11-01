@@ -36,6 +36,7 @@ export interface Settings {
   retentionGb: number | null;
   /** Supprimer les données les plus anciennes pour pouvoir enregistrer la partie qui démarre. */
   makeRoomForRecording: boolean;
+  autoGenerateClips: boolean;
 }
 
 export interface StorageUsage {
@@ -127,4 +128,10 @@ export interface ClipsProgress {
   sessionId: string;
   done: number;
   total: number;
+}
+
+/** Fin d'une génération automatique ; `error` est null quand les clips sont générés. */
+export interface ClipsGenerated {
+  sessionId: string;
+  error: string | null;
 }

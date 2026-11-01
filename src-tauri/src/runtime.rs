@@ -1,10 +1,12 @@
 //! Background game monitor thread and the production recorder.
 
+use crate::generation;
 use crate::state::AppState;
 use lgr_core::store::SessionStore;
 use lgr_engine::monitor::SpaceKeeper;
 use lgr_engine::{
-    make_room, run_maintenance, ActiveRecording, FfmpegCompressor, Monitor, RecorderFactory, Status,
+    make_room, run_maintenance, ActiveRecording, AutoGenerator, FfmpegCompressor, Monitor,
+    RecorderFactory, Status,
 };
 use lgr_live::LiveClient;
 use lgr_media::{detect_encoder, Encoder, Recording};
@@ -92,6 +94,56 @@ pub fn spawn_maintenance(state: &AppState) {
 }
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How often the game state is looked at to notice that a game just ended (a lock read,
+/// no disk access).
+const GAME_END_WATCH_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Generates the clips of each game as soon as it ends, when the option is on. It never
+/// runs while a game is in progress: if the next game starts first, the generation waits
+/// for that one to end. The work itself runs at reduced priority like a manual
+/// generation, and the window is told when it is done.
+pub fn spawn_auto_generation(app: AppHandle, state: &AppState) {
+    let store = state.store.clone();
+    let settings = state.settings.clone();
+    let ffmpeg = state.ffmpeg.clone();
+    let status = Arc::clone(&state.status);
+    let stop = Arc::clone(&state.stop);
+    let in_flight = state.in_flight.clone();
+
+    thread::spawn(move || {
+        let in_game = || {
+            status
+                .lock()
+                .map_or(true, |s| s.state == lgr_engine::GameState::InGame)
+        };
+        let mut auto = AutoGenerator::new(&store);
+        let mut was_in_game = false;
+        let mut pending = false;
+        while sleep_unless_stopped(&stop, GAME_END_WATCH_INTERVAL) {
+            let now_in_game = in_game();
+            pending |= was_in_game && !now_in_game;
+            was_in_game = now_in_game;
+            if !pending || now_in_game {
+                continue;
+            }
+            pending = false;
+            if !settings.load().auto_generate_clips {
+                // games that end while the option is off are not generated when it is
+                // turned on again
+                while auto.next(&store).is_some() {}
+                continue;
+            }
+            if let Some(id) = auto.next(&store) {
+                let outcome =
+                    generation::generate(&app, &store, &settings, ffmpeg.clone(), &in_flight, &id);
+                generation::announce(&app, &id, &outcome);
+                // another game may be waiting
+                pending = true;
+            }
+        }
+    });
+}
 
 /// Sleeps in short slices; returns `false` as soon as `stop` is set.
 fn sleep_unless_stopped(stop: &std::sync::atomic::AtomicBool, total: Duration) -> bool {

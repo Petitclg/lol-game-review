@@ -144,6 +144,24 @@ describe("génération", () => {
     s = reducer(s, { type: "generateDone", sessionId: "s-autre", clips: [] });
     expect(s.clips).toHaveLength(6);
   });
+  it("génération automatique : la progression d'une génération non lancée par la fenêtre est suivie", () => {
+    let s = withGameSelected();
+    s = reducer(s, { type: "generateProgress", progress: { sessionId: "s9", done: 1, total: 5 } });
+    expect(s.generating).toEqual({ sessionId: "s9", done: 1, total: 5 });
+    s = reducer(s, { type: "generateProgress", progress: { sessionId: "s9", done: 3, total: 5 } });
+    expect(s.generating?.done).toBe(3);
+    s = reducer(s, { type: "generationEnded", sessionId: "s9" });
+    expect(s.generating).toBeNull();
+  });
+  it("le dernier évènement d'une génération terminée ne la rouvre pas", () => {
+    const s = withGameSelected();
+    const late = reducer(s, { type: "generateProgress", progress: { sessionId: "s1", done: 6, total: 6 } });
+    expect(late).toBe(s);
+  });
+  it("generationEnded ignore une autre session", () => {
+    const s = reducer(withGameSelected(), { type: "generateStarted", sessionId: "s1" });
+    expect(reducer(s, { type: "generationEnded", sessionId: "autre" })).toBe(s);
+  });
 });
 
 describe("statut des ultimates", () => {

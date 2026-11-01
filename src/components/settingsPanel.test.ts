@@ -18,7 +18,13 @@ const flush = async () => {
 
 function setup(
   overrides: Partial<Backend> = {},
-  initial: Settings = { deleteSourceAfterClips: true, compressClips: false, retentionGb: 20, makeRoomForRecording: true },
+  initial: Settings = {
+    deleteSourceAfterClips: true,
+    compressClips: false,
+    retentionGb: 20,
+    makeRoomForRecording: true,
+    autoGenerateClips: true,
+  },
 ) {
   const getStorageUsage = vi.fn(() => Promise.resolve(USAGE));
   const setSettings = vi.fn((s: Settings) => Promise.resolve(s));
@@ -91,7 +97,13 @@ describe("panneau « Stockage »", () => {
   it("plafond illimité : « Limiter » décoché et saisie désactivée ; cocher réactive", async () => {
     const ui = setup(
       {},
-      { deleteSourceAfterClips: false, compressClips: true, retentionGb: null, makeRoomForRecording: true },
+      {
+        deleteSourceAfterClips: false,
+        compressClips: true,
+        retentionGb: null,
+        makeRoomForRecording: true,
+        autoGenerateClips: true,
+      },
     );
     ui.panel.open(ui.opener);
     await flush();
@@ -166,8 +178,23 @@ describe("panneau « Stockage »", () => {
       compressClips: false,
       retentionGb: null,
       makeRoomForRecording: true,
+      autoGenerateClips: true,
     });
     expect(ui.message().textContent).toBe("Réglages enregistrés.");
+  });
+
+  it("« générer les clips à la fin de chaque partie » est coché par défaut, expliqué et enregistré", async () => {
+    const ui = setup();
+    ui.panel.open(ui.opener);
+    await flush();
+    const box = ui.q("#set-auto-generate") as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(box.getAttribute("aria-describedby")).toBe("set-auto-generate-help");
+    expect(ui.q("#set-auto-generate-help").textContent).toContain("jamais pendant une autre partie");
+    box.checked = false;
+    ui.submit();
+    await flush();
+    expect(ui.setSettings).toHaveBeenCalledWith(expect.objectContaining({ autoGenerateClips: false }));
   });
 
   it("« faire de la place pour la partie en cours » est coché par défaut, expliqué et enregistré", async () => {
@@ -186,7 +213,7 @@ describe("panneau « Stockage »", () => {
   it("affiche un réglage « faire de la place » désactivé reçu du backend", async () => {
     const ui = setup(
       {},
-      { deleteSourceAfterClips: true, compressClips: true, retentionGb: 20, makeRoomForRecording: false },
+      { deleteSourceAfterClips: true, compressClips: true, retentionGb: 20, makeRoomForRecording: false, autoGenerateClips: true },
     );
     ui.panel.open(ui.opener);
     await flush();

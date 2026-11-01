@@ -46,6 +46,7 @@ export type Action =
   | { type: "clipsFailed"; error: string }
   | { type: "generateStarted"; sessionId: string }
   | { type: "generateProgress"; progress: Progress }
+  | { type: "generationEnded"; sessionId: string }
   | { type: "generateDone"; sessionId: string; clips: Clip[] }
   | { type: "generateFailed"; error: string }
   | { type: "setTheme"; theme: ThemeFilter }
@@ -160,9 +161,19 @@ export function reducer(state: State, action: Action): State {
         generating: { sessionId: action.sessionId, done: 0, total: 0 },
         generateError: null,
       };
-    case "generateProgress":
-      if (state.generating?.sessionId !== action.progress.sessionId) return state;
-      return { ...state, generating: action.progress };
+    case "generateProgress": {
+      const { progress } = action;
+      if (state.generating) {
+        return state.generating.sessionId === progress.sessionId
+          ? { ...state, generating: progress }
+          : state;
+      }
+      // une génération automatique (à la fin d'une partie) que cette fenêtre n'a pas lancée ;
+      // l'évènement final (done = total) ne doit pas rouvrir une génération déjà terminée
+      return progress.done < progress.total ? { ...state, generating: progress } : state;
+    }
+    case "generationEnded":
+      return state.generating?.sessionId === action.sessionId ? { ...state, generating: null } : state;
     case "generateDone": {
       const games = state.games.map((g) =>
         g.sessionId === action.sessionId ? { ...g, clipsReady: true } : g,

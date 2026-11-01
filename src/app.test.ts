@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Backend } from "./api";
 import { createApp, type App } from "./app";
 import { createMockBackend } from "./mock";
+import type { ClipsGenerated, ClipsProgress } from "./types";
 
 async function until(cond: () => boolean, timeoutMs = 4000): Promise<void> {
   const start = Date.now();
@@ -142,6 +144,63 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(await backend.getAnnotations(sessionId)).toEqual({});
     expect(root.querySelector(".clip-annotated")).toBeNull();
   }, 20000);
+
+  it("génération automatique : suit la progression, puis rafraîchit les parties et les clips", async () => {
+    app.destroy();
+    root.replaceChildren();
+    const base = createMockBackend();
+    let emit: ((e: ClipsGenerated) => void) | undefined;
+    let progress: ((p: ClipsProgress) => void) | undefined;
+    const backend: Backend = {
+      ...base,
+      onClipsGenerated: (cb) => {
+        emit = cb;
+        return Promise.resolve(() => undefined);
+      },
+      onClipsProgress: (cb) => {
+        progress = cb;
+        return Promise.resolve(() => undefined);
+      },
+    };
+    const listGames = vi.spyOn(backend, "listGames");
+    const getClips = vi.spyOn(backend, "getClips");
+    app = createApp(root, backend);
+    await until(() => root.querySelectorAll(".game-item").length > 0);
+    const sessionId = (await base.listGames(6))[0]?.sessionId as string;
+    root.querySelectorAll<HTMLButtonElement>(".game-item")[0]?.click();
+    // les clips de cette partie existent déjà côté simulé une fois générés
+    await base.generateClips(sessionId);
+    await until(() => emit !== undefined && progress !== undefined);
+
+    progress?.({ sessionId, done: 2, total: 9 });
+    await until(() => root.querySelector(".progress-text")?.textContent?.includes("2 / 9") === true);
+    expect(root.querySelector<HTMLButtonElement>(".toolbar .btn-primary")?.disabled).toBe(true);
+
+    const gamesBefore = listGames.mock.calls.length;
+    const clipsBefore = getClips.mock.calls.length;
+    emit?.({ sessionId, error: null });
+    await until(() => listGames.mock.calls.length > gamesBefore && getClips.mock.calls.length > clipsBefore);
+    await until(() => root.querySelectorAll(".clip-item").length > 0);
+    expect(root.querySelector<HTMLElement>(".progress-box")?.hidden).toBe(true);
+  }, 20000);
+
+  it("génération automatique échouée : message, et plus de progression", async () => {
+    app.destroy();
+    root.replaceChildren();
+    let emit: ((e: ClipsGenerated) => void) | undefined;
+    const backend: Backend = {
+      ...createMockBackend(),
+      onClipsGenerated: (cb) => {
+        emit = cb;
+        return Promise.resolve(() => undefined);
+      },
+    };
+    app = createApp(root, backend);
+    await until(() => root.querySelectorAll(".game-item").length > 0 && emit !== undefined);
+    root.querySelectorAll<HTMLButtonElement>(".game-item")[0]?.click();
+    emit?.({ sessionId: "inconnue", error: "ffmpeg a échoué" });
+    await until(() => root.textContent?.includes("Génération automatique des clips échouée : ffmpeg a échoué") === true);
+  });
 
   it("signale une annotation qui n'a pas pu être enregistrée et revient à l'état enregistré", async () => {
     app.destroy();

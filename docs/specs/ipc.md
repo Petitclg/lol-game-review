@@ -90,6 +90,7 @@ interface Settings {
   compressClips: boolean;           // ré-encoder les clips pour qu'ils prennent moins de place (défaut : true)
   retentionGb: number | null;       // plafond de disque en Go, les plus anciennes parties sont supprimées en premier ; null = illimité (défaut : 20)
   makeRoomForRecording: boolean;    // au début d'une partie, supprimer les données les plus anciennes si le disque ou le plafond n'a plus la place d'un enregistrement (défaut : true)
+  autoGenerateClips: boolean;       // générer les clips d'une partie dès qu'elle se termine (défaut : true), voir ADR 0009
 }
 
 interface StorageUsage {
@@ -121,7 +122,8 @@ interface Status {
 ## Évènements (backend → interface)
 
 - `status-changed` : charge utile `Status`, émis à chaque changement.
-- `clips-progress` : `{ sessionId: string; done: number; total: number }` pendant `generate_clips`.
+- `clips-progress` : `{ sessionId: string; done: number; total: number }` pendant `generate_clips` et pendant une génération automatique (l'interface suit alors la progression, sauf l'évènement final `done = total`).
+- `clips-generated` : `{ sessionId: string; error: string | null }` à la fin d'une génération **automatique** (réussie ou non) ; l'interface rafraîchit alors les parties et les clips. `generate_clips` est refusée (« déjà en cours ») pour une partie déjà en cours de génération.
 
 ## Lecture des fichiers
 

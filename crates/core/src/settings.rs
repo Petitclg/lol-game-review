@@ -11,6 +11,8 @@ pub const BYTES_PER_GB: u64 = 1024 * 1024 * 1024;
 const MIN_RETENTION_GB: u32 = 1;
 const MAX_RETENTION_GB: u32 = 100_000;
 
+/// Independent on/off switches, serialised as such: not a state machine in disguise.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -23,6 +25,8 @@ pub struct Settings {
     /// Before a game is recorded, delete the oldest data if the budget or the disk has
     /// no room left for the recording.
     pub make_room_for_recording: bool,
+    /// Generate the clips of a game as soon as it ends (while no other game is running).
+    pub auto_generate_clips: bool,
 }
 
 impl Default for Settings {
@@ -32,6 +36,7 @@ impl Default for Settings {
             compress_clips: true,
             retention_gb: Some(20),
             make_room_for_recording: true,
+            auto_generate_clips: true,
         }
     }
 }
@@ -153,11 +158,24 @@ mod tests {
                 compress_clips: false,
                 retention_gb: Some(0),
                 make_room_for_recording: false,
+                auto_generate_clips: false,
             })
             .unwrap();
         assert_eq!(saved.retention_gb, Some(1));
         assert_eq!(store.load(), saved);
         assert!(!store.load().make_room_for_recording);
+        assert!(!store.load().auto_generate_clips);
+    }
+
+    #[test]
+    fn clips_are_generated_automatically_by_default_and_for_files_of_older_versions() {
+        assert!(Settings::default().auto_generate_clips);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.json");
+        fs::write(&path, br#"{"compressClips":false}"#).unwrap();
+        assert!(SettingsStore::new(&path).load().auto_generate_clips);
+        fs::write(&path, br#"{"autoGenerateClips":false}"#).unwrap();
+        assert!(!SettingsStore::new(&path).load().auto_generate_clips);
     }
 
     #[test]

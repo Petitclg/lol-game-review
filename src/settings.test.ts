@@ -42,13 +42,21 @@ describe("normalizeSettings", () => {
         compressClips: false,
         retentionGb: null,
         makeRoomForRecording: false,
+        autoGenerateClips: false,
       }),
     ).toEqual({
       deleteSourceAfterClips: false,
       compressClips: false,
       retentionGb: null,
       makeRoomForRecording: false,
+      autoGenerateClips: false,
     });
+  });
+  it("la génération automatique est activée par défaut, y compris pour un backend plus ancien", () => {
+    expect(DEFAULT_SETTINGS.autoGenerateClips).toBe(true);
+    expect(normalizeSettings({ compressClips: true }).autoGenerateClips).toBe(true);
+    expect(normalizeSettings({ autoGenerateClips: "non" }).autoGenerateClips).toBe(true);
+    expect(normalizeSettings({ autoGenerateClips: false }).autoGenerateClips).toBe(false);
   });
   it("champs manquants ou invalides → défauts", () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
@@ -87,11 +95,22 @@ describe("parseRetentionInput", () => {
 });
 
 describe("formulaire ↔ réglages", () => {
-  const base = { deleteSourceAfterClips: true, compressClips: false, makeRoomForRecording: true };
+  const base = {
+    deleteSourceAfterClips: true,
+    compressClips: false,
+    makeRoomForRecording: true,
+    autoGenerateClips: true,
+  };
   it("Limiter décoché ⇒ retentionGb null, même avec une saisie invalide", () => {
     expect(formToSettings({ ...base, limit: false, retentionText: "zzz" })).toEqual({
       ok: true,
-      value: { deleteSourceAfterClips: true, compressClips: false, retentionGb: null, makeRoomForRecording: true },
+      value: {
+        deleteSourceAfterClips: true,
+        compressClips: false,
+        retentionGb: null,
+        makeRoomForRecording: true,
+        autoGenerateClips: true,
+      },
     });
   });
   it("Limiter coché valide la saisie", () => {
@@ -100,12 +119,19 @@ describe("formulaire ↔ réglages", () => {
         deleteSourceAfterClips: false,
         compressClips: true,
         makeRoomForRecording: false,
+        autoGenerateClips: false,
         limit: true,
         retentionText: "30",
       }),
     ).toEqual({
       ok: true,
-      value: { deleteSourceAfterClips: false, compressClips: true, retentionGb: 30, makeRoomForRecording: false },
+      value: {
+        deleteSourceAfterClips: false,
+        compressClips: true,
+        retentionGb: 30,
+        makeRoomForRecording: false,
+        autoGenerateClips: false,
+      },
     });
     expect(formToSettings({ ...base, limit: true, retentionText: "0" })).toMatchObject({ ok: false });
   });

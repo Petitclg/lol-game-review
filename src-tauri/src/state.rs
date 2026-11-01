@@ -2,7 +2,7 @@
 
 use lgr_core::settings::SettingsStore;
 use lgr_core::store::SessionStore;
-use lgr_engine::{GameState, Status};
+use lgr_engine::{GameState, InFlight, Status};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -15,6 +15,8 @@ pub struct AppState {
     pub status: Arc<Mutex<Status>>,
     pub stop: Arc<AtomicBool>,
     pub monitor_thread: Mutex<Option<JoinHandle<()>>>,
+    /// Games whose clips are being generated, by hand or automatically.
+    pub in_flight: InFlight,
 }
 
 impl AppState {
@@ -31,6 +33,7 @@ impl AppState {
             status: Arc::new(Mutex::new(status)),
             stop: Arc::new(AtomicBool::new(false)),
             monitor_thread: Mutex::new(None),
+            in_flight: InFlight::default(),
         }
     }
 }
