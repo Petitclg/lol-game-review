@@ -20,6 +20,9 @@ pub struct Settings {
     pub compress_clips: bool,
     /// Disk budget in gigabytes; the oldest games are deleted first. `None` = unlimited.
     pub retention_gb: Option<u32>,
+    /// Before a game is recorded, delete the oldest data if the budget or the disk has
+    /// no room left for the recording.
+    pub make_room_for_recording: bool,
 }
 
 impl Default for Settings {
@@ -28,6 +31,7 @@ impl Default for Settings {
             delete_source_after_clips: true,
             compress_clips: true,
             retention_gb: Some(20),
+            make_room_for_recording: true,
         }
     }
 }
@@ -101,6 +105,11 @@ mod tests {
     }
 
     #[test]
+    fn making_room_for_the_next_recording_is_on_by_default() {
+        assert!(Settings::default().make_room_for_recording);
+    }
+
+    #[test]
     fn retention_is_clamped_and_unlimited_stays_unlimited() {
         let low = Settings {
             retention_gb: Some(0),
@@ -143,10 +152,25 @@ mod tests {
                 delete_source_after_clips: false,
                 compress_clips: false,
                 retention_gb: Some(0),
+                make_room_for_recording: false,
             })
             .unwrap();
         assert_eq!(saved.retention_gb, Some(1));
         assert_eq!(store.load(), saved);
+        assert!(!store.load().make_room_for_recording);
+    }
+
+    #[test]
+    fn a_settings_file_from_an_older_version_keeps_making_room_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.json");
+        fs::write(
+            &path,
+            br#"{"deleteSourceAfterClips":false,"compressClips":true,"retentionGb":20}"#,
+        )
+        .unwrap();
+        let s = SettingsStore::new(&path).load();
+        assert!(s.make_room_for_recording && !s.delete_source_after_clips);
     }
 
     #[test]

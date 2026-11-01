@@ -35,6 +35,9 @@ pub trait ActiveRecording {
 
 type StatusCallback = Arc<dyn Fn(&Status) + Send + Sync>;
 
+/// Called when a game starts, before its recording: makes room on the disk.
+pub type SpaceKeeper = Arc<dyn Fn(&SessionStore) + Send + Sync>;
+
 struct Active {
     tracker: SessionTracker,
     recording: Option<Box<dyn ActiveRecording>>,
@@ -56,6 +59,7 @@ pub struct Monitor<L: LiveSource, R: RecorderFactory> {
     store: SessionStore,
     active: Option<Active>,
     on_status: StatusCallback,
+    space_keeper: Option<SpaceKeeper>,
 }
 
 impl<L: LiveSource, R: RecorderFactory> Monitor<L, R> {
@@ -66,7 +70,15 @@ impl<L: LiveSource, R: RecorderFactory> Monitor<L, R> {
             store,
             active: None,
             on_status,
+            space_keeper: None,
         }
+    }
+
+    /// Runs `keeper` at the start of every game, before the recording is started.
+    #[must_use]
+    pub fn with_space_keeper(mut self, keeper: SpaceKeeper) -> Self {
+        self.space_keeper = Some(keeper);
+        self
     }
 
     #[must_use]
@@ -115,6 +127,12 @@ impl<L: LiveSource, R: RecorderFactory> Monitor<L, R> {
 
     fn begin(&mut self, data: &AllGameData, now_ms: u64) {
         let id = format!("g{now_ms}");
+        // Time spent making room delays the recording, which the video anchor must know.
+        let room_started = std::time::Instant::now();
+        if let Some(keeper) = &self.space_keeper {
+            keeper(&self.store);
+        }
+        let room_ms = u64::try_from(room_started.elapsed().as_millis()).unwrap_or(u64::MAX);
         if self.store.prepare(&id).is_err() {
             return;
         }
@@ -127,7 +145,7 @@ impl<L: LiveSource, R: RecorderFactory> Monitor<L, R> {
             .as_ref()
             .and_then(|_| self.store.recording_path(&id).ok())
             .map(|p| p.to_string_lossy().into_owned());
-        let mut tracker = SessionTracker::new(id, now_ms + RECORDER_STARTUP_MS, file);
+        let mut tracker = SessionTracker::new(id, now_ms + room_ms + RECORDER_STARTUP_MS, file);
         tracker.observe(data, now_ms);
         self.active = Some(Active {
             tracker,
@@ -371,5 +389,74 @@ mod tests {
         assert_eq!(h.store.list().unwrap().len(), 1);
         h.monitor.shutdown();
         assert_eq!(*h.stopped.lock().unwrap(), 1);
+    }
+
+    /// A harness whose monitor makes room with `keeper` at the start of each game.
+    fn with_keeper(h: Harness, keeper: SpaceKeeper) -> Harness {
+        Harness {
+            monitor: h.monitor.with_space_keeper(keeper),
+            ..h
+        }
+    }
+
+    #[test]
+    fn room_is_made_once_per_game_before_the_recording_starts() {
+        let log: Arc<Mutex<Vec<String>>> = Arc::default();
+        let mut h = harness(
+            vec![
+                Some(data(5.0, false)),
+                Some(data(120.0, false)),
+                Some(data(1800.0, true)),
+            ],
+            false,
+        );
+        let seen = log.clone();
+        h = with_keeper(
+            h,
+            Arc::new(move |store: &SessionStore| {
+                // the folder of the game to come does not exist yet, nothing is recording
+                seen.lock()
+                    .unwrap()
+                    .push(format!("room, {} sessions", store.list().unwrap().len()));
+            }),
+        );
+        h.monitor.tick(10_000);
+        h.monitor.tick(13_000);
+        h.monitor.tick(1_810_000);
+        assert_eq!(*log.lock().unwrap(), ["room, 0 sessions"]);
+        assert_eq!(h.monitor.status().state, GameState::Idle);
+    }
+
+    #[test]
+    fn room_is_not_made_while_no_game_runs() {
+        let calls = Arc::new(Mutex::new(0));
+        let counter = calls.clone();
+        let mut h = with_keeper(
+            harness(vec![None, None], false),
+            Arc::new(move |_: &SessionStore| *counter.lock().unwrap() += 1),
+        );
+        h.monitor.tick(1_000);
+        h.monitor.tick(6_000);
+        assert_eq!(*calls.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn time_spent_making_room_moves_the_recording_start() {
+        let mut h = with_keeper(
+            harness(
+                vec![Some(data(100.0, false)), Some(data(1800.0, true))],
+                false,
+            ),
+            Arc::new(|_: &SessionStore| std::thread::sleep(Duration::from_millis(80))),
+        );
+        h.monitor.tick(10_000);
+        h.monitor.tick(13_000);
+        let metas = h.store.list().unwrap();
+        let session = h.store.load_session(&metas[0].id).unwrap();
+        assert!(
+            session.started_at_ms >= 10_000 + 80 + RECORDER_STARTUP_MS,
+            "recording start {}",
+            session.started_at_ms
+        );
     }
 }

@@ -34,6 +34,8 @@ export interface Settings {
   compressClips: boolean;
   /** Plafond de disque en Go ; null = illimité. */
   retentionGb: number | null;
+  /** Supprimer les données les plus anciennes pour pouvoir enregistrer la partie qui démarre. */
+  makeRoomForRecording: boolean;
 }
 
 export interface StorageUsage {

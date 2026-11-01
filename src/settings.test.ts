@@ -36,16 +36,31 @@ describe("formatBytes", () => {
 
 describe("normalizeSettings", () => {
   it("conserve des réglages valides, null = illimité", () => {
-    expect(normalizeSettings({ deleteSourceAfterClips: false, compressClips: false, retentionGb: null })).toEqual({
+    expect(
+      normalizeSettings({
+        deleteSourceAfterClips: false,
+        compressClips: false,
+        retentionGb: null,
+        makeRoomForRecording: false,
+      }),
+    ).toEqual({
       deleteSourceAfterClips: false,
       compressClips: false,
       retentionGb: null,
+      makeRoomForRecording: false,
     });
   });
   it("champs manquants ou invalides → défauts", () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings({ compressClips: "oui", retentionGb: "20" })).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings({ retentionGb: NaN }).retentionGb).toBe(20);
+  });
+  it("« faire de la place pour la partie en cours » est activé par défaut", () => {
+    expect(DEFAULT_SETTINGS.makeRoomForRecording).toBe(true);
+    // un backend plus ancien ne renvoie pas le champ
+    expect(normalizeSettings({ deleteSourceAfterClips: true }).makeRoomForRecording).toBe(true);
+    expect(normalizeSettings({ makeRoomForRecording: "non" }).makeRoomForRecording).toBe(true);
+    expect(normalizeSettings({ makeRoomForRecording: false }).makeRoomForRecording).toBe(false);
   });
   it("plafond borné à 1 Go minimum et arrondi à 0,1", () => {
     expect(normalizeSettings({ retentionGb: 0.2 }).retentionGb).toBe(1);
@@ -72,22 +87,36 @@ describe("parseRetentionInput", () => {
 });
 
 describe("formulaire ↔ réglages", () => {
+  const base = { deleteSourceAfterClips: true, compressClips: false, makeRoomForRecording: true };
   it("Limiter décoché ⇒ retentionGb null, même avec une saisie invalide", () => {
-    expect(
-      formToSettings({ deleteSourceAfterClips: true, compressClips: false, limit: false, retentionText: "zzz" }),
-    ).toEqual({ ok: true, value: { deleteSourceAfterClips: true, compressClips: false, retentionGb: null } });
+    expect(formToSettings({ ...base, limit: false, retentionText: "zzz" })).toEqual({
+      ok: true,
+      value: { deleteSourceAfterClips: true, compressClips: false, retentionGb: null, makeRoomForRecording: true },
+    });
   });
   it("Limiter coché valide la saisie", () => {
     expect(
-      formToSettings({ deleteSourceAfterClips: false, compressClips: true, limit: true, retentionText: "30" }),
-    ).toEqual({ ok: true, value: { deleteSourceAfterClips: false, compressClips: true, retentionGb: 30 } });
-    expect(
-      formToSettings({ deleteSourceAfterClips: false, compressClips: true, limit: true, retentionText: "0" }),
-    ).toMatchObject({ ok: false });
+      formToSettings({
+        deleteSourceAfterClips: false,
+        compressClips: true,
+        makeRoomForRecording: false,
+        limit: true,
+        retentionText: "30",
+      }),
+    ).toEqual({
+      ok: true,
+      value: { deleteSourceAfterClips: false, compressClips: true, retentionGb: 30, makeRoomForRecording: false },
+    });
+    expect(formToSettings({ ...base, limit: true, retentionText: "0" })).toMatchObject({ ok: false });
   });
   it("settingsToForm : illimité → case décochée, valeur par défaut 20 conservée", () => {
     expect(settingsToForm({ ...DEFAULT_SETTINGS, retentionGb: null })).toMatchObject({ limit: false, retentionText: "20" });
     expect(settingsToForm({ ...DEFAULT_SETTINGS, retentionGb: 7.5 })).toMatchObject({ limit: true, retentionText: "7.5" });
+  });
+  it("le réglage « faire de la place » traverse le formulaire dans les deux sens", () => {
+    expect(settingsToForm({ ...DEFAULT_SETTINGS, makeRoomForRecording: false }).makeRoomForRecording).toBe(false);
+    const parsed = formToSettings({ ...base, makeRoomForRecording: false, limit: false, retentionText: "20" });
+    expect(parsed.ok && parsed.value.makeRoomForRecording).toBe(false);
   });
 });
 

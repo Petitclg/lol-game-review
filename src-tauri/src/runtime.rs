@@ -1,8 +1,10 @@
 //! Background game monitor thread and the production recorder.
 
 use crate::state::AppState;
+use lgr_core::store::SessionStore;
+use lgr_engine::monitor::SpaceKeeper;
 use lgr_engine::{
-    run_maintenance, ActiveRecording, FfmpegCompressor, Monitor, RecorderFactory, Status,
+    make_room, run_maintenance, ActiveRecording, FfmpegCompressor, Monitor, RecorderFactory, Status,
 };
 use lgr_live::LiveClient;
 use lgr_media::{detect_encoder, Encoder, Recording};
@@ -109,6 +111,7 @@ pub fn spawn_monitor(app: AppHandle, state: &AppState) -> Option<JoinHandle<()>>
     let live = LiveClient::new().ok()?;
     let ffmpeg = state.ffmpeg.clone();
     let store = state.store.clone();
+    let settings = state.settings.clone();
     let stop = Arc::clone(&state.stop);
     let status = Arc::clone(&state.status);
 
@@ -122,7 +125,16 @@ pub fn spawn_monitor(app: AppHandle, state: &AppState) -> Option<JoinHandle<()>>
             }
             let _ = app.emit("status-changed", s);
         });
-        let mut monitor = Monitor::new(live, FfmpegRecorder { ffmpeg, encoder }, store, on_status);
+        // The setting is read at every game, so changing it applies to the next one.
+        let space_keeper: SpaceKeeper = Arc::new(move |store: &SessionStore| {
+            let current = settings.load();
+            if current.make_room_for_recording {
+                let free = lgr_engine::disk::free_bytes(store.root());
+                let _ = make_room(store, &current, free);
+            }
+        });
+        let mut monitor = Monitor::new(live, FfmpegRecorder { ffmpeg, encoder }, store, on_status)
+            .with_space_keeper(space_keeper);
 
         while !stop.load(Ordering::Relaxed) {
             monitor.tick(now_ms());

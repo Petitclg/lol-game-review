@@ -77,6 +77,7 @@ interface Settings {
   deleteSourceAfterClips: boolean;  // supprimer la vidéo source une fois les clips générés (défaut : true)
   compressClips: boolean;           // ré-encoder les clips pour qu'ils prennent moins de place (défaut : true)
   retentionGb: number | null;       // plafond de disque en Go, les plus anciennes parties sont supprimées en premier ; null = illimité (défaut : 20)
+  makeRoomForRecording: boolean;    // au début d'une partie, supprimer les données les plus anciennes si le disque ou le plafond n'a plus la place d'un enregistrement (défaut : true)
 }
 
 interface StorageUsage {

@@ -10,6 +10,7 @@ rust-version.workspace = true
 name = "lgr_engine"
 
 [dependencies]
+fs4 = "0.13"
 lgr-core = { path = "../core" }
 lgr-lcu = { path = "../lcu" }
 lgr-live = { path = "../live" }

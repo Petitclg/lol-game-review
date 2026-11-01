@@ -21,6 +21,11 @@ Un enregistrement mesuré pèse environ 1 Go par partie (5 Mbit/s), et les clips
 1. **Supprimer la vidéo source après les clips** : seulement si chaque clip a son fichier et que l'analyse des ultimates est enregistrée (sinon on garderait des clips sans pouvoir les régénérer correctement). Mesuré : 917 Mo → 275 Mo.
 2. **Compresser les clips** en tâche de fond, uniquement quand aucune partie n'est en cours : NVENC `p6`, `vbr`, `cq 36` (AMF et Quick Sync ont des équivalents, non testés), jamais d'encodeur CPU. Un clip n'est remplacé que s'il gagne au moins 8 % ; `compressed.json` évite de recommencer.
 3. **Plafond de rétention** (20 Go par défaut, 1 à 100 000 Go) : on supprime d'abord la partie la plus ancienne, vidéo avant clips, en épargnant toujours la plus récente ; les orphelins périmés sont nettoyés. Les métadonnées (chronologie) restent.
+4. **Faire de la place pour la partie en cours** (activé par défaut, ajouté le 2026-11-01). Le nettoyage du plafond ne tournait que **hors partie**, en tâche de fond : sur un disque plein, ou un plafond atteint, la partie qui démarrait n'était pas enregistrée (ffmpeg ne pouvait plus écrire). Désormais, **au début de chaque partie et avant de lancer l'enregistrement**, on garantit la place d'un enregistrement (réserve de 4 Gio, soit plus d'1 h 40 à 5 Mbit/s) :
+   - deux limites sont examinées : le plafond (l'enregistrement doit tenir dessous) et l'espace libre réel du disque (`fs4::available_space`) ; la plus contraignante décide ;
+   - on supprime les données les plus anciennes, partie après partie : d'abord la vidéo source, puis les clips. Les chronologies et **la dernière partie enregistrée sont toujours conservées** ; si cela ne suffit pas, on enregistre quand même et le manque est ignoré (rien d'autre n'est supprimé) ;
+   - le temps passé à nettoyer retarde l'enregistrement : il est ajouté à l'instant de départ de la vidéo pour que les clips restent synchronisés ;
+   - le réglage est lu à chaque partie ; décoché, rien n'est supprimé à ce moment-là.
 
 Gain de compression mesuré sur un clip réel (NVENC) : `cq 30` ne gagne rien (9,2 → 9,2 Mo), `cq 33` 71 % (SSIM 0,972), `cq 36` 50 % (SSIM 0,967), `cq 38` 41 %. `cq 36` garde l'interface lisible. Sur une partie complète : 275 → 158 Mo (−43 %), soit 917 → 158 Mo avec la suppression de la source (−83 %).
 

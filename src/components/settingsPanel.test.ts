@@ -16,7 +16,10 @@ const flush = async () => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
 };
 
-function setup(overrides: Partial<Backend> = {}, initial: Settings = { deleteSourceAfterClips: true, compressClips: false, retentionGb: 20 }) {
+function setup(
+  overrides: Partial<Backend> = {},
+  initial: Settings = { deleteSourceAfterClips: true, compressClips: false, retentionGb: 20, makeRoomForRecording: true },
+) {
   const getStorageUsage = vi.fn(() => Promise.resolve(USAGE));
   const setSettings = vi.fn((s: Settings) => Promise.resolve(s));
   const backend = {
@@ -39,6 +42,7 @@ function setup(overrides: Partial<Backend> = {}, initial: Settings = { deleteSou
     q,
     deleteSource: () => q<HTMLInputElement>("#set-delete-source"),
     compress: () => q<HTMLInputElement>("#set-compress"),
+    makeRoom: () => q<HTMLInputElement>("#set-make-room"),
     limit: () => q<HTMLInputElement>("#set-limit"),
     retention: () => q<HTMLInputElement>("#set-retention"),
     message: () => q<HTMLElement>(".form-message"),
@@ -85,7 +89,10 @@ describe("panneau « Stockage »", () => {
   });
 
   it("plafond illimité : « Limiter » décoché et saisie désactivée ; cocher réactive", async () => {
-    const ui = setup({}, { deleteSourceAfterClips: false, compressClips: true, retentionGb: null });
+    const ui = setup(
+      {},
+      { deleteSourceAfterClips: false, compressClips: true, retentionGb: null, makeRoomForRecording: true },
+    );
     ui.panel.open(ui.opener);
     await flush();
     expect(ui.limit().checked).toBe(false);
@@ -158,8 +165,32 @@ describe("panneau « Stockage »", () => {
       deleteSourceAfterClips: true,
       compressClips: false,
       retentionGb: null,
+      makeRoomForRecording: true,
     });
     expect(ui.message().textContent).toBe("Réglages enregistrés.");
+  });
+
+  it("« faire de la place pour la partie en cours » est coché par défaut, expliqué et enregistré", async () => {
+    const ui = setup();
+    ui.panel.open(ui.opener);
+    await flush();
+    expect(ui.makeRoom().checked).toBe(true);
+    expect(ui.makeRoom().getAttribute("aria-describedby")).toBe("set-make-room-help");
+    expect(ui.q("#set-make-room-help").textContent).toContain("La dernière partie enregistrée n'est jamais supprimée");
+    ui.makeRoom().checked = false;
+    ui.submit();
+    await flush();
+    expect(ui.setSettings).toHaveBeenCalledWith(expect.objectContaining({ makeRoomForRecording: false }));
+  });
+
+  it("affiche un réglage « faire de la place » désactivé reçu du backend", async () => {
+    const ui = setup(
+      {},
+      { deleteSourceAfterClips: true, compressClips: true, retentionGb: 20, makeRoomForRecording: false },
+    );
+    ui.panel.open(ui.opener);
+    await flush();
+    expect(ui.makeRoom().checked).toBe(false);
   });
 
   it("saisie invalide : message d'erreur, aucun appel au backend", async () => {

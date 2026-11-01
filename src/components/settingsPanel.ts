@@ -2,6 +2,7 @@ import { errorMessage, type Backend } from "../api";
 import { el } from "../dom";
 import {
   DEFAULT_RETENTION_GB,
+  MAKE_ROOM_HELP,
   MIN_RETENTION_GB,
   RETENTION_HELP,
   formToSettings,
@@ -60,6 +61,9 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
   // Formulaire
   const deleteSource = el("input", { attrs: { type: "checkbox", id: "set-delete-source" } });
   const compress = el("input", { attrs: { type: "checkbox", id: "set-compress" } });
+  const makeRoom = el("input", {
+    attrs: { type: "checkbox", id: "set-make-room", "aria-describedby": "set-make-room-help" },
+  });
   const limit = el("input", { attrs: { type: "checkbox", id: "set-limit" } });
   const retention = el("input", {
     class: "retention-input",
@@ -85,6 +89,11 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
     el("h3", { text: "Réglages" }),
     el("label", { class: "check" }, [deleteSource, "Supprimer la vidéo source après la génération des clips"]),
     el("label", { class: "check" }, [compress, "Compresser les clips (gain de place, effectué hors partie)"]),
+    el("label", { class: "check" }, [
+      makeRoom,
+      "Supprimer les données les plus anciennes pour enregistrer la partie en cours",
+    ]),
+    el("p", { class: "muted small", text: MAKE_ROOM_HELP, attrs: { id: "set-make-room-help" } }),
     el("fieldset", { class: "retention" }, [
       el("legend", { text: "Plafond de disque" }),
       el("label", { class: "check" }, [limit, "Limiter"]),
@@ -134,6 +143,7 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
     const f = settingsToForm(s);
     deleteSource.checked = f.deleteSourceAfterClips;
     compress.checked = f.compressClips;
+    makeRoom.checked = f.makeRoomForRecording;
     limit.checked = f.limit;
     retention.value = f.retentionText;
     syncLimit();
@@ -172,6 +182,7 @@ export function createSettingsPanel(backend: Backend, handlers: SettingsPanelHan
     const parsed = formToSettings({
       deleteSourceAfterClips: deleteSource.checked,
       compressClips: compress.checked,
+      makeRoomForRecording: makeRoom.checked,
       limit: limit.checked,
       retentionText: retention.value,
     });
