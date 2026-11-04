@@ -67,6 +67,16 @@ Quel emplacement porte le Flash ? Les identifiants de sorts sont enregistrés da
 
 **Validation.** Sur l'enregistrement Qiyana (981 s) : exactement 7 lancers (99,5 ; 258,5 ; 406,5 ; 487,5 ; 630,5 ; 721,5 ; 916,5 s), sans le faux lancer de 283,5 s que donnait la variante « chiffres stricts seuls ». Sur les clips Nocturne, l'écart-type chute exactement aux images de lancer (475, 883, 1058, 1355, 1613, 1791 s). La vidéo de Nocturne ayant été supprimée, le détecteur n'a pas pu y être relancé de bout en bout. Les tests synthétiques dessinent maintenant une illustration sur R qui disparaît pendant le cooldown.
 
+## Ultimates : lancers fantômes sous un cooldown en cours (2026-11-04)
+
+**Problème constaté sur une partie de Lillia** : 17 lancers détectés en 38 min, dont des écarts de 59 à 66 s alors que l'ultimate a un cooldown de 150 s (au niveau 6). Sur les 6 clips d'ultimate générés, 4 (509, 1065, 1372, 1720 s) montrent l'icône R **déjà** en cooldown (« 46 », « 43 »…) dès le début de la fenêtre : ce sont des lancers fantômes. Les 2 autres (972, 2054 s) montrent des chiffres qui apparaissent à 5 s, comme attendu.
+
+**Cause** : les chiffres durent tout le cooldown (150 s), mais le voile n'est franchement visible qu'au début ; il peut repasser sous le seuil en cours de route et ouvrir un nouvel épisode, que les chiffres déjà présents « confirmaient ».
+
+**Décision** : un lancer part d'une icône **prête**. Un épisode de voile n'est compté que si au plus 1 des 4 échantillons qui précèdent son début (la seconde adjacente exclue) montre des chiffres stricts. `ANALYSIS_VERSION = 3`.
+
+**Limites de la validation** : la vidéo source de cette partie a été supprimée ; la règle a été vérifiée sur les 6 clips (4 rejetés, 2 gardés), pas sur l'enregistrement complet, et la cause exacte du franchissement de seuil dans la vidéo brute n'est pas mesurée. Elle ne suit pas les ultimates qui ne passent pas par un cooldown visible dans le HUD (sorts à relance sans cooldown, changement de forme) : non vérifié.
+
 ## Limites
 
 - Précision de ±0,5 s : les images clés tombent chaque seconde, et l'apparition des chiffres est située au milieu de la seconde précédant leur première observation (mesuré : chiffres réellement apparus à 400,2 s, vus à l'échantillon 401, estimation 400,5). La fenêtre du clip (5 s avant, 11 s après) l'absorbe largement.

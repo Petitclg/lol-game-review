@@ -9,7 +9,8 @@
 /// the casts found in a recording: saved analyses with a lower version are redone.
 /// 2: the ultimate is read by the cooldown veil over its icon (not by the white of the
 /// artwork), summoner spells by the brightness of their icon.
-pub const ANALYSIS_VERSION: u32 = 2;
+/// 3: a veil starting under cooldown digits is a ripple of the running cooldown, not a cast.
+pub const ANALYSIS_VERSION: u32 = 3;
 
 /// Fraction of bright pixels above which digits are considered visible.
 const ON_THRESHOLD: f32 = 0.03;
@@ -177,6 +178,10 @@ const MIN_ULTIMATE_VEIL_SECS: usize = 15;
 const DIGITS_CONFIRM: f32 = 0.0136;
 const CONFIRM_WINDOW: usize = 4;
 const CONFIRM_MIN_SAMPLES: usize = 2;
+/// A cast starts on a ready icon: this many seconds of digits-free samples must precede
+/// the veil. Digits already showing mean a cooldown is running and the veil is a ripple
+/// of it (long cooldowns, e.g. Lillia's, cross the veil threshold again mid-way).
+const LEAD_IN_WINDOW: usize = 4;
 
 /// Estimated ultimate cast times in video seconds.
 ///
@@ -185,7 +190,8 @@ const CONFIRM_MIN_SAMPLES: usize = 2;
 /// Counting white digits alone does not work for every champion: the ready icon of some
 /// (Nocturne) is itself full of near-white pixels, which sat in the hysteresis band of
 /// the digit detector, so casts were missed and others invented. The veil is confirmed
-/// by strict white digits (`strong_digits`) at its start.
+/// by strict white digits (`strong_digits`) at its start and by their absence just before
+/// it: digits last the whole cooldown, so a veil starting under digits is not a new cast.
 ///
 /// When the flatness never varies (a champion whose artwork is as flat as the veil) the
 /// digits alone (`loose_digits`) are read instead, as before. `from` is the second at
@@ -200,16 +206,17 @@ pub fn detect_ultimate_casts(
     let Some(episodes) = veil_episodes(flatness, from, MIN_ULTIMATE_VEIL_SECS) else {
         return detect_casts(loose_digits);
     };
+    let digit_samples = |samples: &[f32]| samples.iter().filter(|&&v| v >= DIGITS_CONFIRM).count();
     episodes
         .into_iter()
         .filter(|&(start, _)| {
             let window = strong_digits.get(start..).unwrap_or_default();
-            window
-                .iter()
-                .take(CONFIRM_WINDOW)
-                .filter(|&&v| v >= DIGITS_CONFIRM)
-                .count()
-                >= CONFIRM_MIN_SAMPLES
+            // the sample just before the veil is skipped: digits may lead it by a second
+            let before = strong_digits
+                .get(start.saturating_sub(LEAD_IN_WINDOW + 1)..start.saturating_sub(1))
+                .unwrap_or_default();
+            digit_samples(&window[..window.len().min(CONFIRM_WINDOW)]) >= CONFIRM_MIN_SAMPLES
+                && digit_samples(before) < CONFIRM_MIN_SAMPLES
         })
         .map(|(start, _)| start as f64 - 0.5)
         .collect()
@@ -623,6 +630,26 @@ mod tests {
             [299.5],
             "the veil starting with the game is a running cooldown"
         );
+    }
+
+    #[test]
+    fn a_veil_rippling_back_under_running_digits_is_not_a_second_cast() {
+        // Lillia: digits last the whole 150 s cooldown, the veil crosses the threshold
+        // again at 200 s (measured: 4 of 6 "casts" of a real game were such ripples).
+        let mut strong = vec![0.006; 600];
+        for v in strong.iter_mut().skip(100).take(150) {
+            *v = 0.04;
+        }
+        for v in strong.iter_mut().skip(300).take(150) {
+            *v = 0.04;
+        }
+        let found = detect_ultimate_casts(
+            &flatness(600, &[(100, 35), (200, 20), (300, 35)]),
+            &strong,
+            &[0.0; 600],
+            0,
+        );
+        assert_eq!(found, [99.5, 299.5]);
     }
 
     #[test]
