@@ -116,6 +116,38 @@ describe("lecteur vidéo : erreurs", () => {
     expect(video.getAttribute("src")).toBe("asset://C:\\clips\\b.mp4");
   });
 
+  it("lance la lecture et donne le focus au lecteur à chaque changement de clip", () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const clips = [
+      makeClip("a", "kill", 100, { file: "C:\\clips\\a.mp4" }),
+      makeClip("b", "kill", 200, { file: "C:\\clips\\b.mp4" }),
+    ];
+    const { view, video } = setup(clips);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(video);
+    (view.el.querySelector(".clip-item:not(.selected)") as HTMLElement).focus();
+    view.update(reducer(stateWith(clips), { type: "selectClip", clipId: "b" }));
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).toBe(video);
+    view.update(reducer(stateWith(clips), { type: "selectClip", clipId: "b" }));
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it("ne vole pas le focus d'un champ de saisie", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const clips = [
+      makeClip("a", "kill", 100, { file: "C:\\clips\\a.mp4" }),
+      makeClip("b", "kill", 200, { file: "C:\\clips\\b.mp4" }),
+    ];
+    const { view, video } = setup(clips);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    view.update(reducer(stateWith(clips), { type: "selectClip", clipId: "b" }));
+    expect(video.getAttribute("src")).toBe("asset://C:\\clips\\b.mp4");
+    expect(document.activeElement).toBe(input);
+  });
+
   it("file null : « Clip non généré », pas de source ni d'erreur", () => {
     const { view, video, errBox } = setup([makeClip("a", "kill", 100, { file: null })]);
     const msg = view.el.querySelector<HTMLElement>(".video-msg");

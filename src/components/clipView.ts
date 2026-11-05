@@ -86,7 +86,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
 
   const video = el("video", {
     class: "video",
-    attrs: { controls: true, preload: "metadata", "aria-label": "Lecteur de clip" },
+    attrs: { controls: true, preload: "metadata", tabindex: 0, "aria-label": "Lecteur de clip" },
   });
   const videoMsg = el("p", { class: "video-msg muted" });
   const videoErrText = el("p", { class: "video-error-text" });
@@ -121,7 +121,8 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
     onAddCustomTag: (partId, label) => h.onAddCustomTag(partId, label),
     onRemoveCustomTag: (label) => h.onRemoveCustomTag(label),
   });
-  const player = el("div", { class: "clip-player" }, [video, videoMsg, videoErr, nav, annotations.el]);
+  const stage = el("div", { class: "player-stage" }, [video, videoMsg, videoErr, nav]);
+  const player = el("div", { class: "clip-player" }, [stage, annotations.el]);
   const browser = el("div", { class: "clip-browser", attrs: { id: "clip-panel", role: "tabpanel" } }, [player, listEl]);
 
   const placeholder = el("p", { class: "placeholder muted" });
@@ -184,6 +185,25 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
     video.load();
   }
 
+  /** Lance la lecture et donne le focus au lecteur (barre d'espace, flèches) sauf pendant une saisie. */
+  function startPlayback(): void {
+    void video.play()?.catch?.(() => undefined);
+    const active = document.activeElement;
+    const busy =
+      active instanceof HTMLElement && active.matches('input, textarea, select, [contenteditable], [role="dialog"], [role="dialog"] *');
+    if (!busy) video.focus({ preventScroll: true });
+  }
+
+  /** Fait défiler la liste seule : scrollIntoView ferait aussi défiler la page et bouger le lecteur. */
+  function revealSelected(): void {
+    const item = listEl.querySelector<HTMLElement>(".clip-item.selected");
+    if (!item) return;
+    const box = listEl.getBoundingClientRect();
+    const rect = item.getBoundingClientRect();
+    if (rect.top < box.top) listEl.scrollTop -= box.top - rect.top;
+    else if (rect.bottom > box.bottom) listEl.scrollTop += rect.bottom - box.bottom;
+  }
+
   function updatePlayer(clip: Clip | null): void {
     const id = clip?.id ?? null;
     if (id === renderedClipId) return;
@@ -197,6 +217,7 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
       video.src = src;
       video.hidden = false;
       videoMsg.hidden = true;
+      startPlayback();
     } else {
       video.hidden = true;
       videoMsg.hidden = false;
@@ -331,8 +352,8 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
             ]);
           }),
         );
-        if (hadFocus) listEl.querySelector<HTMLElement>(".clip-item.selected")?.focus();
-        listEl.querySelector(".clip-item.selected")?.scrollIntoView?.({ block: "nearest" });
+        if (hadFocus) listEl.querySelector<HTMLElement>(".clip-item.selected")?.focus({ preventScroll: true });
+        revealSelected();
       }
       renderedClipsRef = state.clips;
       renderedTheme = state.theme;
