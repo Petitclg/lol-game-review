@@ -15,10 +15,12 @@ interface GameEntry {
   gameId: number;
   createdMs: number;        // epoch ms
   durationSecs: number;
-  queueId: number;
-  championId: number;
+  queueId: number;          // 0 : file inconnue (partie connue par son seul enregistrement)
+  championId: number;       // 0 : champion inconnu du client, voir `champion`
+  champion: string | null;  // identifiant DDragon (ex. "MonkeyKing"), lu dans l'enregistrement ; null si la partie n'en a pas
   kills: number; deaths: number; assists: number;
-  win: boolean;
+  win: boolean | null;      // null : issue inconnue (partie absente de l'historique du client, jamais vue par lui)
+  account: string | null;   // Riot ID du compte qui a joué (lu dans l'enregistrement, ou compte connecté pour l'historique) ; null si inconnu
   sessionId: string | null; // non nul si la partie a été enregistrée par l'application
   clipsReady: boolean;      // les clips ont déjà été générés
   hasRecording: boolean;    // la vidéo source existe encore (sinon : plus de génération/régénération possible)
@@ -81,8 +83,8 @@ interface AnnotatedMoment {
 
 | Commande | Arguments | Retour |
 |---|---|---|
-| `get_account` | — | `Account \| null` (null : client lancé, aucun compte connecté ; erreur : client éteint) |
-| `list_games` | `{ count: number }` | `GameEntry[]`, plus récentes d'abord |
+| `get_account` | — | `Account \| null` : compte connecté au client (null : client lancé, aucun compte connecté ; erreur : client éteint). Les parties enregistrées restent accessibles dans ces deux cas ; l'interface regroupe les parties par `account` (sans tenir compte de la casse) et propose un menu pour choisir le compte affiché |
+| `list_games` | `{ count: number }` | `GameEntry[]`, plus récentes d'abord : les `count` dernières parties de l'historique du client (si lancé et connecté), plus **toutes** les parties enregistrées, sans le client. Une partie enregistrée hors historique garde le résumé que le client avait donné (`game.json`), sinon `queueId`/`championId` valent 0 et `win` est null. Jamais d'erreur si le client est éteint |
 | `generate_clips` | `{ sessionId: string }` | `Clip[]` (extrait les fichiers vidéo, silencieusement ; fusionne les clips qui se recoupent, voir [ADR 0008](../adr/0008-clip-merging-and-annotations.md)) |
 | `get_clips` | `{ sessionId: string }` | `Clip[]` (vide si non générés) |
 | `get_annotations` | `{ sessionId: string }` | `Record<string, Annotation>` par identifiant de moment (vide si aucune) |

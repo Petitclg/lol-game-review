@@ -6,6 +6,7 @@ import {
   reducer,
   selectedGame,
   visibleClips,
+  visibleGames,
   type State,
 } from "./store";
 import type { GameEntry } from "../types";
@@ -49,6 +50,75 @@ describe("compte et statut", () => {
   it("statusChanged", () => {
     const status = { state: "inGame", recording: true, ffmpegAvailable: false } as const;
     expect(reducer(initialState(), { type: "statusChanged", status }).status).toEqual(status);
+  });
+});
+
+describe("plusieurs comptes", () => {
+  const owned = (gameId: number, account: string | null, createdMs: number): GameEntry => ({
+    ...game(gameId, `s${gameId}`),
+    account,
+    createdMs,
+  });
+  const ME = { riotId: "Moi#EUW", level: 30 };
+  const games = [owned(1, "Moi#EUW", 300), owned(2, "Autre#EUW", 500), owned(3, "moi#euw", 100)];
+
+  it("sans client, choisit le compte de la partie la plus récente", () => {
+    const s = reducer(initialState(), { type: "gamesLoaded", games });
+    expect(s.selectedAccount).toBe("autre#euw");
+    expect(visibleGames(s).map((g) => g.gameId)).toEqual([2]);
+  });
+
+  it("avec le client, choisit le compte connecté, sans tenir compte de la casse", () => {
+    let s = reducer(initialState(), { type: "accountLoaded", account: ME });
+    s = reducer(s, { type: "gamesLoaded", games });
+    expect(s.selectedAccount).toBe("moi#euw");
+    expect(visibleGames(s).map((g) => g.gameId)).toEqual([1, 3]);
+  });
+
+  it("propose le compte connecté même sans partie", () => {
+    const s = reducer(initialState(), { type: "accountLoaded", account: ME });
+    expect(s.selectedAccount).toBe("moi#euw");
+  });
+
+  it("selectAccount change la liste et remet la sélection à zéro", () => {
+    let s = reducer(reducer(initialState(), { type: "accountLoaded", account: ME }), {
+      type: "gamesLoaded",
+      games,
+    });
+    s = reducer(s, { type: "selectGame", gameId: 1 });
+    s = reducer(s, { type: "clipsLoaded", sessionId: "s1", clips: SAMPLE_CLIPS });
+    s = reducer(s, { type: "selectAccount", key: "autre#euw" });
+    expect(s).toMatchObject({ selectedAccount: "autre#euw", selectedGameId: null, clips: [], theme: "all" });
+    expect(visibleGames(s).map((g) => g.gameId)).toEqual([2]);
+  });
+
+  it("selectAccount identique → même état", () => {
+    const s = reducer(initialState(), { type: "gamesLoaded", games });
+    expect(reducer(s, { type: "selectAccount", key: s.selectedAccount ?? "" })).toBe(s);
+  });
+
+  it("un rafraîchissement garde le compte choisi et sa partie", () => {
+    let s = reducer(reducer(initialState(), { type: "accountLoaded", account: ME }), {
+      type: "gamesLoaded",
+      games,
+    });
+    s = reducer(s, { type: "selectAccount", key: "autre#euw" });
+    s = reducer(s, { type: "selectGame", gameId: 2 });
+    s = reducer(s, { type: "gamesLoaded", games: [...games] });
+    expect(s).toMatchObject({ selectedAccount: "autre#euw", selectedGameId: 2 });
+  });
+
+  it("un compte qui n'a plus de partie cède la place au compte par défaut", () => {
+    let s = reducer(initialState(), { type: "gamesLoaded", games });
+    s = reducer(s, { type: "selectGame", gameId: 2 });
+    s = reducer(s, { type: "gamesLoaded", games: [owned(1, "Moi#EUW", 300)] });
+    expect(s).toMatchObject({ selectedAccount: "moi#euw", selectedGameId: null });
+  });
+
+  it("les parties sans compte forment un compte inconnu", () => {
+    const s = reducer(initialState(), { type: "gamesLoaded", games: [owned(7, null, 1)] });
+    expect(s.selectedAccount).toBe("");
+    expect(visibleGames(s)).toHaveLength(1);
   });
 });
 

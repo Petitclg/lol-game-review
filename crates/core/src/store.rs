@@ -48,6 +48,13 @@ pub struct SessionMeta {
     pub last_game_time_secs: f64,
     pub has_recording: bool,
     pub clips_ready: bool,
+    /// Riot ID of the account that played; `None` when the recording does not know it.
+    pub account: Option<String>,
+    /// Data Dragon id of the champion played, and the score at the end of the recording.
+    pub champion: Option<String>,
+    pub kills: u32,
+    pub deaths: u32,
+    pub assists: u32,
 }
 
 /// What the match history says about a game, kept next to the game so that its
@@ -426,12 +433,18 @@ impl SessionStore {
                 continue;
             };
             let dir = entry.path();
+            let me = session.me();
             out.push(SessionMeta {
                 id,
                 started_at_ms: session.started_at_ms,
                 last_game_time_secs: session.last_game_time_secs,
                 has_recording: dir.join("recording.mkv").is_file(),
                 clips_ready: dir.join("clips.json").is_file(),
+                account: session.account(),
+                champion: me.map(|p| p.champion.clone()),
+                kills: me.map_or(0, |p| p.kills),
+                deaths: me.map_or(0, |p| p.deaths),
+                assists: me.map_or(0, |p| p.assists),
             });
         }
         out.sort_by_key(|m| std::cmp::Reverse(m.started_at_ms));
@@ -660,6 +673,47 @@ mod tests {
         assert_eq!(metas[0].id, "new");
         assert!(metas[0].has_recording && !metas[0].clips_ready);
         assert!(!metas[1].has_recording && metas[1].clips_ready);
+    }
+
+    #[test]
+    fn list_reports_the_account_and_the_player_of_the_game() {
+        use crate::session::{PlayerSnapshot, Snapshot};
+        let dir = tempfile::tempdir().unwrap();
+        let store = SessionStore::new(dir.path());
+        let mut s = session("a", 1);
+        s.player_aliases = vec!["Me#EUW".into(), "Me".into()];
+        s.snapshots = vec![Snapshot {
+            game_time_secs: 60.0,
+            my_gold: None,
+            players: vec![PlayerSnapshot {
+                name: "Me#EUW".into(),
+                champion: "Ahri".into(),
+                team: "ORDER".into(),
+                is_me: true,
+                level: 5,
+                kills: 3,
+                deaths: 2,
+                assists: 1,
+                items: vec![],
+                spells: vec![],
+                spell_keys: vec![],
+            }],
+        }];
+        store.save_session(&s).unwrap();
+        store.save_session(&session("b", 0)).unwrap();
+        let metas = store.list().unwrap();
+        assert_eq!(metas[0].account.as_deref(), Some("Me#EUW"));
+        assert_eq!(metas[0].champion.as_deref(), Some("Ahri"));
+        assert_eq!(
+            (metas[0].kills, metas[0].deaths, metas[0].assists),
+            (3, 2, 1)
+        );
+        assert_eq!(
+            metas[1].account.as_deref(),
+            Some("Me"),
+            "no tag: first alias"
+        );
+        assert_eq!(metas[1].champion, None);
     }
 
     #[test]

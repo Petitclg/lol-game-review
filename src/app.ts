@@ -38,6 +38,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   const header = createHeader({
     onOpenSettings: () => settings.open(header.settingsButton),
     onOpenAnnotations: () => showAnnotations(),
+    onSelectAccount: (key) => store.dispatch({ type: "selectAccount", key }),
   });
   const settings = createSettingsPanel(backend, {
     onSaved: () => {
@@ -48,7 +49,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
   const banner = el("div", { class: "banner", attrs: { "aria-live": "polite" } });
   const games = createGameList({
     onSelect: (gameId) => selectGame(gameId),
-    onRefresh: () => void refreshGames(),
+    onRefresh: () => void refresh(),
   });
   const clipView = createClipView(backend, {
     onGenerate: () => void generate(),
@@ -101,8 +102,8 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     const state = store.getState();
     if (state.accountError) {
       replaceChildren(banner, [
-        el("div", { class: "alert alert-error", attrs: { role: "alert" } }, [
-          "Le client League of Legends semble éteint ou injoignable. Lancez-le puis réessayez. ",
+        el("div", { class: "alert alert-info" }, [
+          "Le client League of Legends est éteint ou injoignable : seules les parties enregistrées sont affichées. ",
           el("span", { class: "muted small", text: `(${state.accountError})` }),
           " ",
           el("button", {
@@ -116,7 +117,7 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     } else if (state.accountLoaded && !state.account) {
       replaceChildren(banner, [
         el("div", { class: "alert alert-info" }, [
-          "Aucun compte n'est connecté dans le client League of Legends. Connectez-vous puis ",
+          "Aucun compte n'est connecté dans le client League of Legends : seules les parties enregistrées sont affichées. Connectez-vous puis ",
           el("button", {
             class: "btn btn-small",
             text: "réessayez",
@@ -157,10 +158,11 @@ export function createApp(root: HTMLElement, backend: Backend): App {
     try {
       const account = await backend.getAccount();
       store.dispatch({ type: "accountLoaded", account });
-      if (account) await refreshGames();
     } catch (err) {
       store.dispatch({ type: "accountFailed", error: errorMessage(err) });
     }
+    // les parties enregistrées se voient sans le client
+    await refreshGames();
   }
 
   async function loadClips(): Promise<void> {

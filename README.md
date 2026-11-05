@@ -7,7 +7,7 @@ Application de bureau Windows (Tauri) pour revoir les moments forts de ses parti
 1. L'application reste active dans la zone de notification (fermer la fenêtre ne la quitte pas).
 2. Quand une partie démarre (Live Client Data API), elle enregistre la fenêtre du jeu en arrière-plan : encodeur matériel (NVENC, AMF ou Quick Sync), pas d'audio, aucune fenêtre, priorité réduite.
 3. À la fin de la partie, la chronologie et l'état des 10 joueurs sont sauvegardés.
-4. Dans l'interface, choisissez une partie récente (client LoL) et générez les clips : découpe sans ré-encodage, silencieuse et rapide.
+4. Dans l'interface, choisissez le compte (détecté dans les enregistrements) puis une partie, et générez les clips : découpe sans ré-encodage, silencieuse et rapide. Le client LoL n'est pas nécessaire pour revoir les parties enregistrées ; lancé, il ajoute l'historique et les résultats.
 5. Parcourez les clips par thème ; le panneau latéral montre les items, KDA et sorts de chaque joueur.
 6. Au démarrage, l'application se met à jour vers la dernière release GitHub (jamais pendant une partie).
 

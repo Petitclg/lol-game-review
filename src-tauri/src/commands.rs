@@ -7,8 +7,8 @@ use lgr_core::session::Clip;
 use lgr_core::settings::Settings;
 use lgr_core::store::StorageUsage;
 use lgr_engine::{
-    list_annotated_moments as read_annotated_moments, load_clips as load_session_clips,
-    merge_games, remember_games, ultimate_status, AnnotatedMoment, GameEntry, Status,
+    list_annotated_moments as read_annotated_moments, list_games as build_game_list,
+    load_clips as load_session_clips, ultimate_status, AnnotatedMoment, GameEntry, Status,
     UltimateStatus,
 };
 use lgr_lcu::{discover_lockfile_candidates, LcuApi, LcuClient};
@@ -57,15 +57,31 @@ pub async fn get_account() -> Result<Option<Account>, String> {
 pub async fn list_games(state: State<'_, AppState>, count: u32) -> Result<Vec<GameEntry>, String> {
     let store = state.store.clone();
     blocking(move || {
-        let matches = connect()?
-            .recent_matches(count.clamp(1, 50))
-            .map_err(|e| e.to_string())?;
         let sessions = store.list().map_err(|e| e.to_string())?;
-        let games = merge_games(&matches, &sessions);
+        // the recorded games do not need the client: with it off (or nobody connected)
+        // only the history is missing
+        let (matches, account) = match connect() {
+            Ok(client) => {
+                let account = client
+                    .current_summoner()
+                    .ok()
+                    .flatten()
+                    .map(|s| s.riot_id());
+                let matches = client
+                    .recent_matches(count.clamp(1, 50))
+                    .unwrap_or_default();
+                (matches, account)
+            }
+            Err(_) => (Vec::new(), None),
+        };
         // champion, outcome and date are only known to the client, whose history is
-        // limited: keep them with the game for the review of annotations
-        remember_games(&store, &games);
-        Ok(games)
+        // limited: they are kept with the game (see `list_games`)
+        Ok(build_game_list(
+            &store,
+            &sessions,
+            &matches,
+            account.as_deref(),
+        ))
     })
     .await
 }

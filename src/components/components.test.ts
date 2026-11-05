@@ -4,7 +4,9 @@ import { countByTheme, filterClips, type ThemeFilter } from "../clips";
 import { SAMPLE_CLIPS, makeClip } from "../testUtils";
 import { renderTabs } from "./tabs";
 import { statusLabel } from "./header";
-import { gameBadge } from "./gameList";
+import { gameBadge, gameOutcome, createGameList } from "./gameList";
+import { initialState, reducer } from "../state/store";
+import type { GameEntry } from "../types";
 import { el } from "../dom";
 
 describe("renderTabs", () => {
@@ -74,5 +76,52 @@ describe("statusLabel / gameBadge", () => {
     // clips prêts mais vidéo source supprimée : le badge reste « Clips prêts »
     expect(gameBadge({ ...base, sessionId: "s", clipsReady: true, hasRecording: false }).text).toBe("Clips prêts");
     expect(gameBadge({ ...base, sessionId: "s", clipsReady: false, hasRecording: false }).text).toBe("Vidéo supprimée");
+  });
+});
+
+describe("liste des parties et comptes", () => {
+  const owned = (gameId: number, account: string, over: Partial<GameEntry> = {}): GameEntry => ({
+    gameId,
+    createdMs: gameId,
+    durationSecs: 1800,
+    queueId: 420,
+    championId: 103,
+    kills: 1,
+    deaths: 2,
+    assists: 3,
+    win: true,
+    account,
+    sessionId: `s${gameId}`,
+    clipsReady: false,
+    hasRecording: true,
+    ...over,
+  });
+
+  it("gameOutcome distingue victoire, défaite et issue inconnue", () => {
+    expect(gameOutcome(owned(1, "A", { win: true })).kind).toBe("win");
+    expect(gameOutcome(owned(1, "A", { win: false })).kind).toBe("loss");
+    expect(gameOutcome(owned(1, "A", { win: null }))).toEqual({ text: "Résultat inconnu", kind: "unknown" });
+  });
+
+  it("n'affiche que les parties du compte choisi, sans inventer l'issue ni la file", () => {
+    const list = createGameList({ onSelect: vi.fn(), onRefresh: vi.fn() });
+    let s = reducer(initialState(), {
+      type: "gamesLoaded",
+      games: [
+        owned(1, "Moi#EUW"),
+        owned(2, "Autre#EUW", { win: null, queueId: 0, championId: 0, champion: "Ahri" }),
+      ],
+    });
+    s = reducer(s, { type: "selectAccount", key: "autre#euw" });
+    list.update(s, null);
+    const items = list.el.querySelectorAll<HTMLElement>(".game-item");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.classList.contains("unknown")).toBe(true);
+    expect(items[0]?.querySelector(".champ-name")?.textContent).toBe("Ahri");
+    expect(items[0]?.querySelector(".result")?.textContent).toBe("Résultat inconnu");
+    expect(items[0]?.querySelector(".game-meta")?.textContent).not.toContain("File");
+    list.update(reducer(s, { type: "selectAccount", key: "moi#euw" }), null);
+    expect(list.el.querySelectorAll(".game-item")).toHaveLength(1);
+    expect(list.el.querySelector(".result")?.textContent).toBe("Victoire");
   });
 });

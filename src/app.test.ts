@@ -34,6 +34,22 @@ describe("application (backend simulé, hors ligne)", () => {
     expect(root.querySelector(".app-version")?.textContent).toBe("v0.0.0-dev");
   });
 
+  it("change de compte avec le menu de l'en-tête", async () => {
+    await until(() => root.querySelectorAll(".game-item").length > 0);
+    const select = root.querySelector<HTMLSelectElement>(".account-select");
+    expect(select?.hidden).toBe(false);
+    expect(select?.value).toBe("invocateur#euw");
+    expect(root.querySelectorAll(".game-item")).toHaveLength(6);
+
+    root.querySelector<HTMLElement>(".game-item")?.click();
+    select!.value = "remplacant#euw";
+    select!.dispatchEvent(new Event("change"));
+    const items = root.querySelectorAll(".game-item");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.textContent).toContain("Résultat inconnu");
+    expect(root.querySelector(".clip-list")?.children.length ?? 0).toBe(0);
+  });
+
   it("garde l'en-tête utilisable quand la version est indisponible", async () => {
     app.destroy();
     root.replaceChildren();

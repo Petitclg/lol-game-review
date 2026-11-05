@@ -62,6 +62,25 @@ pub struct Session {
     pub snapshots: Vec<Snapshot>,
 }
 
+impl Session {
+    /// The tracked player, as of the last snapshot.
+    #[must_use]
+    pub fn me(&self) -> Option<&PlayerSnapshot> {
+        self.snapshots.last()?.players.iter().find(|p| p.is_me)
+    }
+
+    /// The Riot ID of the account that played: the alias carrying a tag, else the first
+    /// alias (recordings of old versions only know the summoner name).
+    #[must_use]
+    pub fn account(&self) -> Option<String> {
+        self.player_aliases
+            .iter()
+            .find(|a| a.contains('#'))
+            .or_else(|| self.player_aliases.first())
+            .cloned()
+    }
+}
+
 /// A highlight clip, as exposed to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

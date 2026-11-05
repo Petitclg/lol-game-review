@@ -1,8 +1,8 @@
 import { el, remoteImage, replaceChildren } from "../dom";
-import { championIconUrl, findChampionByKey, type Ddragon } from "../ddragon";
+import { championIconUrl, findChampion, findChampionByKey, type Ddragon } from "../ddragon";
 import { formatDuration, formatKda, formatRelativeDate, queueLabel } from "../format";
 import { hasSource } from "../settings";
-import type { State } from "../state/store";
+import { visibleGames, type State } from "../state/store";
 import type { GameEntry } from "../types";
 
 export const NO_VIDEO_TOOLTIP =
@@ -25,23 +25,39 @@ export function gameBadge(game: GameEntry): { text: string; kind: string } {
   return { text: "Enregistrée", kind: "recorded" };
 }
 
+export function gameOutcome(game: GameEntry): { text: string; kind: "win" | "loss" | "unknown" } {
+  if (game.win === true) return { text: "Victoire", kind: "win" };
+  if (game.win === false) return { text: "Défaite", kind: "loss" };
+  return { text: "Résultat inconnu", kind: "unknown" };
+}
+
 function gameItem(game: GameEntry, selected: boolean, dd: Ddragon | null, h: GameListHandlers) {
-  const champ = findChampionByKey(dd?.champions ?? null, game.championId);
-  const name = champ?.name ?? `Champion ${game.championId}`;
+  const champ =
+    findChampionByKey(dd?.champions ?? null, game.championId) ??
+    (game.champion ? findChampion(dd?.champions ?? null, game.champion) : null);
+  const name = champ?.name ?? game.champion ?? `Champion ${game.championId}`;
   const icon = remoteImage(
     dd && champ ? championIconUrl(dd.version, champ.id) : null,
     "",
     "champ-icon",
   );
   const badge = gameBadge(game);
+  const outcome = gameOutcome(game);
+  const meta = [
+    game.queueId > 0 ? queueLabel(game.queueId) : null,
+    formatRelativeDate(game.createdMs),
+    formatDuration(game.durationSecs),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
   const button = el(
     "button",
     {
-      class: `game-item ${game.win ? "win" : "loss"}${selected ? " selected" : ""}`,
+      class: `game-item ${outcome.kind}${selected ? " selected" : ""}`,
       attrs: {
         type: "button",
         "aria-pressed": selected,
-        "aria-label": `${name}, ${game.win ? "victoire" : "défaite"}, ${formatKda(game.kills, game.deaths, game.assists)}`,
+        "aria-label": `${name}, ${outcome.text.toLowerCase()}, ${formatKda(game.kills, game.deaths, game.assists)}`,
       },
       on: { click: () => h.onSelect(game.gameId) },
     },
@@ -50,13 +66,10 @@ function gameItem(game: GameEntry, selected: boolean, dd: Ddragon | null, h: Gam
       el("span", { class: "game-main" }, [
         el("span", { class: "game-title" }, [
           el("span", { class: "champ-name", text: name }),
-          el("span", { class: "result", text: game.win ? "Victoire" : "Défaite" }),
+          el("span", { class: "result", text: outcome.text }),
         ]),
         el("span", { class: "game-kda", text: formatKda(game.kills, game.deaths, game.assists) }),
-        el("span", {
-          class: "game-meta",
-          text: `${queueLabel(game.queueId)} · ${formatRelativeDate(game.createdMs)} · ${formatDuration(game.durationSecs)}`,
-        }),
+        el("span", { class: "game-meta", text: meta }),
       ]),
       el("span", {
         class: `badge badge-${badge.kind}`,
@@ -85,7 +98,14 @@ export function createGameList(h: GameListHandlers): GameList {
     body,
   ]);
 
-  let last: { games: unknown; selected: number | null; loading: boolean; error: string | null; dd: Ddragon | null } | null = null;
+  let last: {
+    games: unknown;
+    account: string | null;
+    selected: number | null;
+    loading: boolean;
+    error: string | null;
+    dd: Ddragon | null;
+  } | null = null;
 
   return {
     el: root,
@@ -93,6 +113,7 @@ export function createGameList(h: GameListHandlers): GameList {
       if (
         last &&
         last.games === state.games &&
+        last.account === state.selectedAccount &&
         last.selected === state.selectedGameId &&
         last.loading === state.gamesLoading &&
         last.error === state.gamesError &&
@@ -102,24 +123,26 @@ export function createGameList(h: GameListHandlers): GameList {
       }
       last = {
         games: state.games,
+        account: state.selectedAccount,
         selected: state.selectedGameId,
         loading: state.gamesLoading,
         error: state.gamesError,
         dd,
       };
       refresh.disabled = state.gamesLoading;
+      const shown = visibleGames(state);
       const hadFocus = body.contains(document.activeElement);
       if (state.gamesLoading && state.games.length === 0) {
         replaceChildren(body, [el("p", { class: "muted", text: "Chargement des parties…" })]);
       } else if (state.gamesError && state.games.length === 0) {
         replaceChildren(body, [el("p", { class: "muted", text: "Impossible de charger les parties." })]);
-      } else if (state.games.length === 0) {
+      } else if (shown.length === 0) {
         replaceChildren(body, [el("p", { class: "muted", text: "Aucune partie récente." })]);
       } else {
         const list = el(
           "ul",
           { class: "game-list" },
-          state.games.map((g) => gameItem(g, g.gameId === state.selectedGameId, dd, h)),
+          shown.map((g) => gameItem(g, g.gameId === state.selectedGameId, dd, h)),
         );
         replaceChildren(body, [list]);
         if (hadFocus) list.querySelector<HTMLElement>(".game-item.selected")?.focus();

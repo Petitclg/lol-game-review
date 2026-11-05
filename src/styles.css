@@ -124,6 +124,22 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.account-select {
+  max-width: 18rem;
+  padding: 0.25rem 0.4rem;
+  color: var(--text);
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 600;
+}
+
+.account-select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -313,6 +329,10 @@ button:disabled {
 
 .game-item.loss {
   border-left-color: var(--loss);
+}
+
+.game-item.unknown {
+  border-left-color: var(--muted);
 }
 
 .game-item.selected {

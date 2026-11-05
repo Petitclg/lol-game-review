@@ -1,3 +1,4 @@
+import { accountOptions, defaultAccountKey, gameAccountKey } from "../accounts";
 import { withAnnotation } from "../annotations";
 import { filterClips, type ThemeFilter } from "../clips";
 import type { Account, Annotation, Annotations, Clip, GameEntry, Status, UltimateStatus } from "../types";
@@ -13,6 +14,8 @@ export interface State {
   account: Account | null;
   /** Message d'erreur si le client LoL est injoignable. */
   accountError: string | null;
+  /** Compte dont on voit les parties (clé de `accountKey`) ; null tant qu'aucune partie ni compte connecté. */
+  selectedAccount: string | null;
   status: Status | null;
   games: GameEntry[];
   gamesLoading: boolean;
@@ -38,6 +41,7 @@ export interface State {
 export type Action =
   | { type: "accountLoaded"; account: Account | null }
   | { type: "accountFailed"; error: string }
+  | { type: "selectAccount"; key: string }
   | { type: "statusChanged"; status: Status }
   | { type: "gamesLoading" }
   | { type: "gamesLoaded"; games: GameEntry[] }
@@ -65,6 +69,7 @@ export function initialState(): State {
     accountLoaded: false,
     account: null,
     accountError: null,
+    selectedAccount: null,
     status: null,
     games: [],
     gamesLoading: false,
@@ -86,6 +91,40 @@ export function initialState(): State {
 
 export function selectedGame(state: State): GameEntry | null {
   return state.games.find((g) => g.gameId === state.selectedGameId) ?? null;
+}
+
+/** Les parties du compte sélectionné. */
+export function visibleGames(state: State): GameEntry[] {
+  const key = state.selectedAccount;
+  return key === null ? state.games : state.games.filter((g) => gameAccountKey(g) === key);
+}
+
+function noGame(): Pick<
+  State,
+  "selectedGameId" | "clips" | "selectedClipId" | "clipsError" | "ultimate" | "annotations"
+> {
+  return {
+    selectedGameId: null,
+    clips: [],
+    selectedClipId: null,
+    clipsError: null,
+    ultimate: null,
+    annotations: {},
+  };
+}
+
+/** Garde un compte sélectionné qui existe encore, et une partie sélectionnée qui lui appartient. */
+function settle(state: State): State {
+  const connected = state.account?.riotId ?? null;
+  const options = accountOptions(state.games, connected);
+  const selectedAccount = options.some((o) => o.key === state.selectedAccount)
+    ? state.selectedAccount
+    : defaultAccountKey(options, connected);
+  const next: State = { ...state, selectedAccount };
+  if (next.selectedGameId === null || visibleGames(next).some((g) => g.gameId === next.selectedGameId)) {
+    return next;
+  }
+  return { ...next, ...noGame() };
 }
 
 export function visibleClips(state: State): Clip[] {
@@ -114,25 +153,26 @@ function withClips(state: State, clips: Clip[]): State {
 export function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "accountLoaded":
-      return { ...state, accountLoaded: true, account: action.account, accountError: null };
+      return settle({ ...state, accountLoaded: true, account: action.account, accountError: null });
     case "accountFailed":
-      return { ...state, accountLoaded: true, account: null, accountError: action.error };
+      return settle({ ...state, accountLoaded: true, account: null, accountError: action.error });
+    case "selectAccount":
+      if (action.key === state.selectedAccount) return state;
+      return {
+        ...state,
+        ...noGame(),
+        selectedAccount: action.key,
+        clipsLoading: false,
+        generateError: null,
+        theme: "all",
+        notice: null,
+      };
     case "statusChanged":
       return { ...state, status: action.status };
     case "gamesLoading":
       return { ...state, gamesLoading: true, gamesError: null };
-    case "gamesLoaded": {
-      const stillThere = action.games.some((g) => g.gameId === state.selectedGameId);
-      return {
-        ...state,
-        games: action.games,
-        gamesLoading: false,
-        gamesError: null,
-        ...(stillThere
-          ? {}
-          : { selectedGameId: null, clips: [], selectedClipId: null, clipsError: null, ultimate: null, annotations: {} }),
-      };
-    }
+    case "gamesLoaded":
+      return settle({ ...state, games: action.games, gamesLoading: false, gamesError: null });
     case "gamesFailed":
       return { ...state, gamesLoading: false, gamesError: action.error };
     case "selectGame":

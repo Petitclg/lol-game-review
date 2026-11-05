@@ -18,7 +18,7 @@ pub use clipgen::{
     FfmpegCutter, HudUltimateDetector, UltimateDetector, UltimateOutcome, UltimateState,
     UltimateStatus,
 };
-pub use games::{merge_games, remember_games, GameEntry};
+pub use games::{list_games, remember_games, GameEntry};
 pub use maintenance::{run_maintenance, ClipCompressor, FfmpegCompressor, MaintenanceReport};
 pub use monitor::{ActiveRecording, GameState, Monitor, RecorderFactory, Status};
 pub use schedule::{next_check_delay, UpdateOutcome};

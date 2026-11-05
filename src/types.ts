@@ -17,12 +17,19 @@ export interface GameEntry {
   gameId: number;
   createdMs: number;
   durationSecs: number;
+  /** 0 : file inconnue (partie connue par son seul enregistrement). */
   queueId: number;
+  /** 0 : champion inconnu du client, voir `champion`. */
   championId: number;
+  /** Identifiant DDragon du champion (ex. "MonkeyKing") ; null ou absent si inconnu. */
+  champion?: string | null;
   kills: number;
   deaths: number;
   assists: number;
-  win: boolean;
+  /** null : issue inconnue (partie connue par son seul enregistrement, absente de l'historique du client). */
+  win: boolean | null;
+  /** Riot ID du compte qui a joué ; null ou absent si l'enregistrement ne le dit pas. */
+  account?: string | null;
   sessionId: string | null;
   clipsReady: boolean;
   /** La vidéo source existe encore ; absent traité comme vrai (anciens backends). */

@@ -71,6 +71,7 @@ function buildGames(now: number): GameEntry[] {
     clipsReady: false,
     hasRecording: true,
     sessionId: null as string | null,
+    account: ME_NAME as string | null,
   };
   const list: GameEntry[] = [
     {
@@ -151,6 +152,22 @@ function buildGames(now: number): GameEntry[] {
       deaths: 2,
       assists: 8,
       win: true,
+    },
+    {
+      // autre compte, connu par son seul enregistrement : ni issue ni file
+      ...base,
+      account: "Remplacant#EUW",
+      gameId: 1_700_000_000_000,
+      createdMs: now - 2 * 24 * 60 * MINUTE,
+      durationSecs: 1700,
+      queueId: 0,
+      championId: 0,
+      champion: "Ahri",
+      kills: 6,
+      deaths: 4,
+      assists: 7,
+      win: null,
+      sessionId: "mock-session-alt",
     },
   ];
   // sans session, il n'y a jamais eu de vidéo
@@ -401,8 +418,9 @@ export function createMockBackend(): Backend {
     },
     async listGames(count) {
       await delay(300);
-      if (offline) throw "Client League of Legends injoignable.";
-      return games.slice(0, count).map((g) => ({ ...g }));
+      // sans client (ou sans compte connecté), l'historique manque mais les parties enregistrées restent
+      const shown = offline || noAccount ? games.filter((g) => g.sessionId) : games.slice(0, count);
+      return shown.map((g) => ({ ...g }));
     },
     async generateClips(sessionId) {
       const game = games.find((g) => g.sessionId === sessionId);
@@ -448,17 +466,21 @@ export function createMockBackend(): Backend {
             tags: a.tags,
             clipId: found?.clip.id ?? null,
             file: found?.clip.file ?? null,
-            game: game && {
-              gameId: game.gameId,
-              createdMs: game.createdMs,
-              durationSecs: game.durationSecs,
-              queueId: game.queueId,
-              championId: game.championId,
-              kills: game.kills,
-              deaths: game.deaths,
-              assists: game.assists,
-              win: game.win,
-            },
+            // comme le backend : le résumé n'existe que si le client a donné l'issue
+            game:
+              game && game.win !== null
+                ? {
+                    gameId: game.gameId,
+                    createdMs: game.createdMs,
+                    durationSecs: game.durationSecs,
+                    queueId: game.queueId,
+                    championId: game.championId,
+                    kills: game.kills,
+                    deaths: game.deaths,
+                    assists: game.assists,
+                    win: game.win,
+                  }
+                : null,
           });
         }
       }

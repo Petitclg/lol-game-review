@@ -1,3 +1,4 @@
+import { accountKey, accountOptions } from "../accounts";
 import { el, replaceChildren } from "../dom";
 import type { State } from "../state/store";
 import type { Status } from "../types";
@@ -26,7 +27,11 @@ export function versionLabel(version: string | null | undefined): string | null 
 }
 
 export function createHeader(
-  handlers: { onOpenSettings?: () => void; onOpenAnnotations?: () => void } = {},
+  handlers: {
+    onOpenSettings?: () => void;
+    onOpenAnnotations?: () => void;
+    onSelectAccount?: (key: string) => void;
+  } = {},
 ): Header {
   const title = el("h1", { class: "app-title", text: "LoL Game Review" });
   const versionEl = el("span", {
@@ -34,7 +39,63 @@ export function createHeader(
     attrs: { hidden: true, title: "Version de l'application" },
   });
   const brand = el("div", { class: "app-brand" }, [title, versionEl]);
-  const account = el("div", { class: "account" });
+  const accountName = el("span", { class: "account-name" });
+  const accountSelect = el("select", {
+    class: "account-select",
+    attrs: { "aria-label": "Compte dont on voit les parties", title: "Compte dont on voit les parties" },
+    on: { change: () => handlers.onSelectAccount?.(accountSelect.value) },
+  });
+  const accountLevel = el("span", { class: "account-level" });
+  const account = el("div", { class: "account" }, [accountName, accountSelect, accountLevel]);
+  let accountSignature = "";
+
+  /** Le menu n'est reconstruit que si son contenu change : une liste ouverte doit rester ouverte. */
+  function renderAccount(state: State): void {
+    const connected = state.account?.riotId ?? null;
+    const options = accountOptions(state.games, connected);
+    const signature = JSON.stringify([
+      options,
+      state.selectedAccount,
+      connected,
+      state.account?.level,
+      state.accountLoaded,
+      state.accountError,
+    ]);
+    if (signature === accountSignature) return;
+    accountSignature = signature;
+
+    const several = options.length > 1;
+    accountSelect.hidden = !several;
+    accountName.hidden = several;
+    if (several) {
+      const connectedKey = accountKey(connected);
+      replaceChildren(
+        accountSelect,
+        options.map((o) =>
+          el("option", {
+            text: o.key === connectedKey ? `${o.label} (connecté)` : o.label,
+            attrs: { value: o.key, selected: o.key === state.selectedAccount },
+          }),
+        ),
+      );
+      accountSelect.value = state.selectedAccount ?? "";
+    } else if (options[0]) {
+      accountName.className = "account-name";
+      accountName.textContent = options[0].label;
+    } else {
+      accountName.className = "account-name muted";
+      accountName.textContent = !state.accountLoaded
+        ? "Chargement…"
+        : state.accountError
+          ? "Client LoL éteint"
+          : "Aucun compte connecté";
+    }
+
+    const showLevel =
+      state.account !== null && state.selectedAccount === accountKey(state.account.riotId);
+    accountLevel.hidden = !showLevel;
+    accountLevel.textContent = showLevel && state.account ? `Niv. ${state.account.level}` : "";
+  }
   const pill = el("span", { class: "status-pill", attrs: { role: "status" } });
   const warning = el("span", { class: "badge badge-warn", attrs: { hidden: true } });
   const settingsButton = el("button", {
@@ -70,21 +131,7 @@ export function createHeader(
       warning.hidden = !noFfmpeg;
       warning.textContent = noFfmpeg ? "⚠ FFmpeg introuvable : génération de clips impossible" : "";
 
-      if (state.account) {
-        replaceChildren(account, [
-          el("span", { class: "account-name", text: state.account.riotId }),
-          el("span", { class: "account-level", text: `Niv. ${state.account.level}` }),
-        ]);
-      } else if (state.accountLoaded) {
-        replaceChildren(account, [
-          el("span", {
-            class: "account-name muted",
-            text: state.accountError ? "Client LoL éteint" : "Aucun compte connecté",
-          }),
-        ]);
-      } else {
-        replaceChildren(account, [el("span", { class: "account-name muted", text: "Chargement…" })]);
-      }
+      renderAccount(state);
     },
   };
 }
