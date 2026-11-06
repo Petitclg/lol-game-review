@@ -50,6 +50,8 @@ function setup(clips: Clip[], videoSrc: (p: string) => string | null = (p) => `a
 
 function failVideo(video: HTMLVideoElement, code: number, message: string): void {
   Object.defineProperty(video, "error", { configurable: true, value: { code, message } });
+  // la première erreur déclenche une relecture automatique ; la seconde est affichée
+  video.dispatchEvent(new Event("error"));
   video.dispatchEvent(new Event("error"));
 }
 
@@ -89,8 +91,21 @@ describe("lecteur vidéo : erreurs", () => {
     const { video, errBox } = setup([makeClip("a", "kill", 100, { file: "C:\\clips\\a.mp4" })]);
     Object.defineProperty(video, "error", { configurable: true, value: null });
     video.dispatchEvent(new Event("error"));
+    video.dispatchEvent(new Event("error"));
     expect(errBox.textContent).toContain("code 0");
     expect(errBox.textContent).toContain("erreur de lecture inconnue");
+  });
+
+  it("une première erreur recharge le clip une fois, sans message", () => {
+    const { video, errBox } = setup([makeClip("a", "kill", 100, { file: "C:\\clips\\a.mp4" })]);
+    load.mockClear();
+    Object.defineProperty(video, "error", { configurable: true, value: { code: 2, message: "" } });
+    video.dispatchEvent(new Event("error"));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(errBox.hidden).toBe(true);
+    video.dispatchEvent(new Event("error"));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(errBox.hidden).toBe(false);
   });
 
   it("« Réessayer » recharge la source et masque l'erreur", () => {

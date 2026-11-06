@@ -142,6 +142,8 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
   let renderedAnnotations: unknown;
   let playingClip: Clip | null = null;
   let playingSrc: string | null = null;
+  let autoRetried = false;
+  let pendingResume: { position: number; resume: boolean } | null = null;
 
   function hideVideoError(): void {
     videoErr.hidden = true;
@@ -156,8 +158,30 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
     video.load();
   }
 
+  /** Recharge la source en reprenant à la même position. */
+  function reloadAt(src: string, position: number, resume: boolean): void {
+    pendingResume = { position, resume };
+    video.src = src;
+    video.load();
+  }
+
+  video.addEventListener("loadedmetadata", () => {
+    const p = pendingResume;
+    pendingResume = null;
+    if (!p) return;
+    if (p.position > 0) video.currentTime = p.position;
+    if (p.resume) void video.play()?.catch?.(() => undefined);
+  });
+
   video.addEventListener("error", () => {
     if (!video.getAttribute("src") || !playingClip) return;
+    // La compression en arrière-plan remplace le fichier du clip pendant la lecture : le
+    // lecteur échoue alors une fois, et le fichier remplacé se lit normalement.
+    if (!autoRetried && playingSrc) {
+      autoRetried = true;
+      reloadAt(playingSrc, video.currentTime || 0, !video.paused);
+      return;
+    }
     const err = video.error;
     const code = err?.code ?? 0;
     const reason = MEDIA_ERROR_REASONS[code] ?? "erreur de lecture inconnue";
@@ -178,6 +202,8 @@ export function createClipView(backend: Backend, h: ClipViewHandlers): ClipView 
     renderedClipId = undefined;
     playingClip = null;
     playingSrc = null;
+    autoRetried = false;
+    pendingResume = null;
     hideVideoError();
     if (!video.hasAttribute("src")) return;
     video.pause();
